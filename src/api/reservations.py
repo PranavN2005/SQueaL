@@ -15,15 +15,15 @@ router = APIRouter(
 
 class reservation(BaseModel):
     reservation_id: int
-    customer_name:str = Field(..., min_length=1)
-    party_size: int = Field(..., gt=0)
-    table_id: int = Field(..., gt=0)
+    customer_name:str
+    party_size: int
+    table_id: int
     time: datetime.datetime
 
 class reservationResponse(BaseModel):
     id: int
     party_name: str
-    table_ids: List[int, gt=0]
+    table_ids: List[int]
     time: datetime.datetime
     
 
@@ -46,9 +46,8 @@ def get_reservation(party_id: int, table_id: int):
         WHERE table_id = :table_id AND party_id = :party_id
         ORDER BY time
     """)
-    with db.egine.connect() as connection:
+    with db.engine.connect() as conn:
         conn.execute(query)
-
 
 @router.delete("/reservations/{party_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_reservation(party_id: int):

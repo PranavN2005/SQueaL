@@ -43,4 +43,4 @@ app.include_router(tables.router)
 
 @app.get("/")
 async def root():
-    return {"message": "Shop is open for business!"}
+    return {"message": "House is open for business!"}
