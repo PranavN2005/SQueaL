@@ -1,17 +1,10 @@
-
-from fastapi import APIRouter, Depends, status
-from pydantic import BaseModel, Field, field_validator
-from typing import List
-import json
+# api/tables.py
+from fastapi import APIRouter, Depends
+from pydantic import BaseModel
+from typing import List, Optional
+import sqlalchemy
 from src.api import auth
 from src import database as db
-import sqlalchemy
-
-## GET  /tables/{table_id}}/tabs
-
-## POST /tables/{table_id}}/tabs
-
-## DELETE /tables/{table_id}/tabs
 
 router = APIRouter(
     prefix="/tables",
@@ -19,16 +12,28 @@ router = APIRouter(
     dependencies=[Depends(auth.get_api_key)],
 )
 
-class table_id(BaseModel):
-    id: int
-    name: str
+class TableResponse(BaseModel):
+    table_id: int
     capacity: int
-    is_available: bool
+    status: str
+    assigned_waiter_id: Optional[int] = None
+    current_party_size: Optional[int] = None
+    
 
-@router.get("/tables/", response_model=List[table])
+@router.get("/", response_model=List[TableResponse])
 def get_tables():
-    pass
+    query = sqlalchemy.text("""
+        SELECT
+            table_id,
+            capacity,
+            status,
+            assigned_waiter_id,
+            current_party_size
+        FROM tables
+        ORDER BY table_id
+    """)
 
-@router.get("/tables/{table_id}", response_model=table)
-def get_table(table_id: int):
-    pass
+    with db.engine.connect() as conn:
+        rows = conn.execute(query).mappings().all()
+
+    return [TableResponse(**row) for row in rows]

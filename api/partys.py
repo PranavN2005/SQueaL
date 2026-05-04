@@ -45,4 +45,6 @@ def get_party_tabs(party_id: int):
 def delete_party(party_id: int):
     pass
 
+@
+
 
