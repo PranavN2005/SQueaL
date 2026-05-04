@@ -1,11 +1,10 @@
 from fastapi import APIRouter, Depends, status
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel
 from typing import List
-import json
 from src.api import auth
 from src import database as db
 import sqlalchemy
-from datetime import datetime, timedelta
+from datetime import datetime
 
 router = APIRouter(
     prefix="/reservations",
