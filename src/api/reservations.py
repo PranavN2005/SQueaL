@@ -13,19 +13,21 @@ router = APIRouter(
     dependencies=[Depends(auth.get_api_key)],
 )
 
+
 class reservation(BaseModel):
     reservation_id: int
-    customer_name:str
+    customer_name: str
     party_size: int
     table_id: int
     time: datetime
+
 
 class reservationResponse(BaseModel):
     id: int
     party_name: str
     table_ids: List[int]
     time: datetime
-    
+
 
 @router.post("/reservations/{party_id}", response_model=reservationResponse)
 def make_reservation(party_name: str, party_size: int, table_id: int, time: datetime):
@@ -49,13 +51,15 @@ def get_reservation(party_id: int, table_id: int):
     with db.engine.connect() as conn:
         conn.execute(query)
 
+
 @router.delete("/reservations/{party_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_reservation(party_id: int):
     pass
 
+
 ## POtable_idST reservations/{party_id]}
 @router.post("/reservations/{party_id}", response_model=List[reservationResponse])
-def assign_party(party_id: int, ):
+def assign_party(
+    party_id: int,
+):
     pass
-
-

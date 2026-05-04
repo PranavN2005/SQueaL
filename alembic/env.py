@@ -17,6 +17,7 @@ if config.config_file_name is not None:
 # add your model's MetaData object here
 # for 'autogenerate' support
 from src.models import Base
+
 target_metadata = Base.metadata
 
 
@@ -31,6 +32,7 @@ def _database_url() -> str:
     if url.startswith("postgres://"):
         return "postgresql+psycopg://" + url[len("postgres://") :]
     return url
+
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
@@ -70,10 +72,10 @@ def run_migrations_online() -> None:
 
     """
     configuration = config.get_section(config.config_ini_section, {})
-    
+
     # Use POSTGRES_URI from environment if available, otherwise use config
     configuration["sqlalchemy.url"] = _database_url()
-    
+
     connectable = engine_from_config(
         configuration,
         prefix="sqlalchemy.",
@@ -81,9 +83,7 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        context.configure(
-            connection=connection, target_metadata=target_metadata
-        )
+        context.configure(connection=connection, target_metadata=target_metadata)
 
         with context.begin_transaction():
             context.run_migrations()

@@ -7,9 +7,18 @@ description = """
 The restaurant hosting application helps staff manage tables, reservations, server assignments, and customer tabs in real time.
 """
 tags_metadata = [
-    {"name": "parties", "description": "Manage parties, tabs and party-related actions."},
-    {"name": "reservations", "description": "Create, view and manage reservations for tables."},
-    {"name": "employees", "description": "Employee lookup and assignments (waitstaff, hosts)."},
+    {
+        "name": "parties",
+        "description": "Manage parties, tabs and party-related actions.",
+    },
+    {
+        "name": "reservations",
+        "description": "Create, view and manage reservations for tables.",
+    },
+    {
+        "name": "employees",
+        "description": "Employee lookup and assignments (waitstaff, hosts).",
+    },
     {"name": "tables", "description": "View and manage table status and assignments."},
 ]
 

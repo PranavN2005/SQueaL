@@ -12,13 +12,14 @@ router = APIRouter(
     dependencies=[Depends(auth.get_api_key)],
 )
 
+
 class TableResponse(BaseModel):
     table_id: int
     capacity: int
     status: str
     assigned_waiter_id: Optional[int] = None
     current_party_size: Optional[int] = None
-    
+
 
 @router.get("/", response_model=List[TableResponse])
 def get_tables():
