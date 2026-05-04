@@ -24,7 +24,10 @@ def _database_url() -> str:
     url = os.getenv("POSTGRES_URI") or os.getenv("DATABASE_URL")
     if not url:
         # Fall back to alembic.ini for local/manual runs if env vars are absent.
-        return config.get_main_option("sqlalchemy.url")
+        main_url = config.get_main_option("sqlalchemy.url")
+        if main_url is None:
+            raise RuntimeError("No database URL found in environment or alembic.ini")
+        return main_url
 
     if url.startswith("postgresql://") and "+psycopg" not in url:
         return "postgresql+psycopg://" + url[len("postgresql://") :]

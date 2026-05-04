@@ -1,8 +1,10 @@
 from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey
-from sqlalchemy.orm import declarative_base, relationship
+from sqlalchemy.orm import DeclarativeBase, relationship
 from datetime import datetime
 
-Base = declarative_base()
+
+class Base(DeclarativeBase):
+    pass
 
 
 class Employee(Base):
