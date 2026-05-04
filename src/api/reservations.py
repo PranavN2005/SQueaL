@@ -18,22 +18,22 @@ class reservation(BaseModel):
     customer_name:str
     party_size: int
     table_id: int
-    time: datetime.datetime
+    time: datetime
 
 class reservationResponse(BaseModel):
     id: int
     party_name: str
     table_ids: List[int]
-    time: datetime.datetime
+    time: datetime
     
 
 @router.post("/reservations/{party_id}", response_model=reservationResponse)
-def make_reservation(party_name: str, party_size: int, table_id: int, time: datetime.datetime):
+def make_reservation(party_name: str, party_size: int, table_id: int, time: datetime):
     pass
 
 
 ## Find reservation for a table
-@router.get("/reservations/{party_id}", response_model=List[CheckoutResponse])
+@router.get("/reservations/{party_id}", response_model=List[reservationResponse])
 def get_reservation(party_id: int, table_id: int):
     query = sqlalchemy.text("""
         SELECT 
@@ -54,7 +54,7 @@ def delete_reservation(party_id: int):
     pass
 
 ## POtable_idST reservations/{party_id]}
-@router.post("/reservations/{party_id}", response_model=List[CheckoutResponse])
+@router.post("/reservations/{party_id}", response_model=List[reservationResponse])
 def assign_party(party_id: int, ):
     pass
 
