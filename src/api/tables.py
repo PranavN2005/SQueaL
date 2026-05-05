@@ -36,16 +36,20 @@ class TableUpdate(BaseModel):
 
 
 def _get_table_row(conn, table_id: int) -> Optional[dict]:
-    row = conn.execute(
-        sqlalchemy.text(
-            """
+    row = (
+        conn.execute(
+            sqlalchemy.text(
+                """
             SELECT table_id, capacity, status, assigned_waiter_id, current_party_size
             FROM tables
             WHERE table_id = :table_id
             """
-        ),
-        {"table_id": table_id},
-    ).mappings().first()
+            ),
+            {"table_id": table_id},
+        )
+        .mappings()
+        .first()
+    )
     return dict(row) if row else None
 
 
@@ -112,7 +116,8 @@ def patch_table(table_id: int, body: TableUpdate):
     updates = body.model_dump(exclude_unset=True)
     if not updates:
         raise HTTPException(
-            status_code=400, detail="At least one field must be provided",
+            status_code=400,
+            detail="At least one field must be provided",
         )
 
     with db.engine.begin() as conn:
@@ -120,7 +125,10 @@ def patch_table(table_id: int, body: TableUpdate):
         if table is None:
             raise HTTPException(status_code=404, detail="Table not found")
 
-        if "current_party_size" in updates and updates["current_party_size"] is not None:
+        if (
+            "current_party_size" in updates
+            and updates["current_party_size"] is not None
+        ):
             if updates["current_party_size"] > table["capacity"]:
                 raise HTTPException(
                     status_code=400,
