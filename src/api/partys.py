@@ -34,16 +34,16 @@ class tabsResponse(BaseModel):
     tabs: List[partyTab]
 
 
-@router.post("/parties/{party_id}/tabs", response_model=tabsResponse)
+@router.post("/{party_id}/tabs", response_model=tabsResponse)
 def create_party_tab(party_id: int, tab_items: List[foodItem]):
     pass
 
 
-@router.get("/parties/{party_id}/tabs", response_model=tabsResponse)
+@router.get("/{party_id}/tabs", response_model=tabsResponse)
 def get_party_tabs(party_id: int):
     pass
 
 
-@router.delete("/parties/{party_id}/", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{party_id}/", status_code=status.HTTP_204_NO_CONTENT)
 def delete_party(party_id: int):
     pass

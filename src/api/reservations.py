@@ -28,13 +28,13 @@ class reservationResponse(BaseModel):
     time: datetime
 
 
-@router.post("/reservations/{party_id}", response_model=reservationResponse)
+@router.post("/{party_id}", response_model=reservationResponse)
 def make_reservation(party_name: str, party_size: int, table_id: int, time: datetime):
     pass
 
 
 ## Find reservation for a table
-@router.get("/reservations/{party_id}", response_model=List[reservationResponse])
+@router.get("/{party_id}", response_model=List[reservationResponse])
 def get_reservation(party_id: int, table_id: int):
     query = sqlalchemy.text("""
         SELECT 
@@ -51,13 +51,13 @@ def get_reservation(party_id: int, table_id: int):
         conn.execute(query)
 
 
-@router.delete("/reservations/{party_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{party_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_reservation(party_id: int):
     pass
 
 
 ## POtable_idST reservations/{party_id]}
-@router.post("/reservations/{party_id}", response_model=List[reservationResponse])
+@router.post("/{party_id}", response_model=List[reservationResponse])
 def assign_party(
     party_id: int,
 ):
