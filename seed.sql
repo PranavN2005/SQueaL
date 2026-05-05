@@ -16,7 +16,7 @@ INSERT INTO tables (table_id, capacity, status, assigned_waiter_id, current_part
     (8, 4, 'available', NULL, NULL)
 ON CONFLICT (table_id) DO NOTHING;
 
--- Keep auto-increment sequences ahead of the seeded ids so future inserts
+-- keep auto-increment sequences ahead of the seeded ids so future inserts
 -- don't collide with these fixed values.
 SELECT setval('employees_employee_id_seq', (SELECT MAX(employee_id) FROM employees));
 SELECT setval('tables_table_id_seq',       (SELECT MAX(table_id)    FROM tables));
