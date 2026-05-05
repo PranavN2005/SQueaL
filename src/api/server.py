@@ -40,7 +40,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["GET", "OPTIONS"],
+    allow_methods=["GET", "PATCH", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -52,4 +52,4 @@ app.include_router(tables.router)
 
 @app.get("/")
 async def root():
-    return {"message": "House is open for business!"}
+    return {"message": "Restaurant is open for business!"}
