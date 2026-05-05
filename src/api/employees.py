@@ -20,7 +20,7 @@ class EmployeeResponse(BaseModel):
 
 @router.get(
     "/",
-    response_model=List[employee],
+    response_model=List[EmployeeResponse],
     status_code=status.HTTP_200_OK,
 )
 def get_employee(employee_id: int):
