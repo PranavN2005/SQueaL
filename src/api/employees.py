@@ -23,7 +23,7 @@ class EmployeeResponse(BaseModel):
     response_model=List[EmployeeResponse],
     status_code=status.HTTP_200_OK,
 )
-def get_employee(employee_id: int):
+def get_employees():
     query = sqlalchemy.text("""
         SELECT employee_id, first_name, last_name
         FROM employees
