@@ -6,14 +6,14 @@ INSERT INTO employees (employee_id, first_name, last_name) VALUES
 ON CONFLICT (employee_id) DO NOTHING;
 
 INSERT INTO tables (table_id, capacity, status, assigned_waiter_id, current_party_size) VALUES
-    (1, 2, 'available', NULL, NULL),
+    (1, 2, 'open', NULL, NULL),
     (2, 4, 'occupied',  10,   3),
-    (3, 4, 'available', NULL, NULL),
+    (3, 4, 'open', NULL, NULL),
     (4, 6, 'occupied',  11,   5),
-    (5, 2, 'available', NULL, NULL),
-    (6, 8, 'available', NULL, NULL),
-    (7, 6, 'available', NULL, NULL),
-    (8, 4, 'available', NULL, NULL)
+    (5, 2, 'open', NULL, NULL),
+    (6, 8, 'open', NULL, NULL),
+    (7, 6, 'open', NULL, NULL),
+    (8, 4, 'open', NULL, NULL)
 ON CONFLICT (table_id) DO NOTHING;
 
 -- keep auto-increment sequences ahead of the seeded ids so future inserts

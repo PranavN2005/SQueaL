@@ -19,6 +19,7 @@ class TableResponse(BaseModel):
     status: str
     assigned_waiter_id: Optional[int] = None
     current_party_size: Optional[int] = None
+    reserved_for: Optional[str] = None
 
 
 class AssignWaiterBody(BaseModel):
@@ -33,6 +34,7 @@ class AssignWaiterResponse(BaseModel):
 class TableUpdate(BaseModel):
     status: Optional[str] = None
     current_party_size: Optional[int] = Field(None, ge=0)
+    reserved_for: Optional[str] = None
 
 
 def _get_table_row(conn, table_id: int) -> Optional[dict]:
@@ -40,7 +42,7 @@ def _get_table_row(conn, table_id: int) -> Optional[dict]:
         conn.execute(
             sqlalchemy.text(
                 """
-            SELECT table_id, capacity, status, assigned_waiter_id, current_party_size
+            SELECT table_id, capacity, status, assigned_waiter_id, current_party_size, reserved_for
             FROM tables
             WHERE table_id = :table_id
             """
@@ -71,7 +73,8 @@ def get_tables():
             capacity,
             status,
             assigned_waiter_id,
-            current_party_size
+            current_party_size,
+            reserved_for
         FROM tables
         ORDER BY table_id
     """)
@@ -143,6 +146,9 @@ def patch_table(table_id: int, body: TableUpdate):
         if "current_party_size" in updates:
             set_parts.append("current_party_size = :current_party_size")
             params["current_party_size"] = updates["current_party_size"]
+        if "reserved_for" in updates:
+            set_parts.append("reserved_for = :reserved_for")
+            params["reserved_for"] = updates["reserved_for"]
 
         conn.execute(
             sqlalchemy.text(
@@ -153,6 +159,31 @@ def patch_table(table_id: int, body: TableUpdate):
                 """
             ),
             params,
+        )
+
+        updated = _get_table_row(conn, table_id)
+    assert updated is not None
+    return TableResponse(**updated)
+
+
+@router.post("/{table_id}/reset", response_model=TableResponse)
+def reset_table(table_id: int):
+    with db.engine.begin() as conn:
+        if _get_table_row(conn, table_id) is None:
+            raise HTTPException(status_code=404, detail="Table not found")
+
+        conn.execute(
+            sqlalchemy.text(
+                """
+                UPDATE tables
+                SET status = 'open',
+                    assigned_waiter_id = NULL,
+                    current_party_size = NULL,
+                    reserved_for = NULL
+                WHERE table_id = :table_id
+                """
+            ),
+            {"table_id": table_id},
         )
 
         updated = _get_table_row(conn, table_id)

@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from src.api import partys, reservations, employees, tables
+from src.api import partys, reservations, employees, tables, tabs
 from starlette.middleware.cors import CORSMiddleware
 
 
@@ -20,6 +20,7 @@ tags_metadata = [
         "description": "Employee lookup and assignments (waitstaff, hosts).",
     },
     {"name": "tables", "description": "View and manage table status and assignments."},
+    {"name": "tabs", "description": "Create and update tabs for tables."},
 ]
 
 app = FastAPI(
@@ -48,6 +49,7 @@ app.include_router(partys.router)
 app.include_router(reservations.router)
 app.include_router(employees.router)
 app.include_router(tables.router)
+app.include_router(tabs.router)
 
 
 @app.get("/")

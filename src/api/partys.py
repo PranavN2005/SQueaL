@@ -1,7 +1,10 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from typing import List
+from datetime import datetime
+import sqlalchemy
 from src.api import auth
+from src import database as db
 
 router = APIRouter(
     prefix="/parties",
@@ -9,85 +12,104 @@ router = APIRouter(
     dependencies=[Depends(auth.get_api_key)],
 )
 
-class party(BaseModel):
+
+class PartyCreate(BaseModel):
+    name: str
+    party_size: int
+
+
+class Party(BaseModel):
     id: int
     name: str
     party_size: int
 
 
-class foodItem(BaseModel):
-    id: int
+class FoodItem(BaseModel):
     name: str
-    price: float
+    quantity: int
+    unit_price: float
 
 
-class partyTab(BaseModel):
+class PartyTab(BaseModel):
     id: int
     party_id: int
-    tab_items: List[foodItem]
+    tab_items: List[FoodItem]
     total_price: float
     created_at: str
 
 
-class tabsResponse(BaseModel):
-    tabs: List[partyTab]
+class TabsResponse(BaseModel):
+    tabs: List[PartyTab]
 
-@router.post("/", response_model=party, status_code=status.HTTP_201_CREATED)
-def create_party(party: party):
+
+@router.post("/", response_model=Party, status_code=status.HTTP_201_CREATED)
+def create_party(body: PartyCreate):
     with db.engine.begin() as conn:
-        result = conn.execute(
-            sqlalchemy.text(
-                """
-                INSERT INTO parties (name, party_size) 
-                VALUES (:name, :party_size) 
-                RETURNING party_id, name, party_size
-                """
-            ),
-            {"name": party.name, "party_size": party.party_size}
-        ).mapping().first()
-        
-        return party(
-            id=result["party_id"],
-            name=result["name"],
-            party_size=result["party_size"]
+        row = (
+            conn.execute(
+                sqlalchemy.text(
+                    """
+                    INSERT INTO parties (name, party_size)
+                    VALUES (:name, :party_size)
+                    RETURNING party_id, name, party_size
+                    """
+                ),
+                {"name": body.name, "party_size": body.party_size},
+            )
+            .mappings()
+            .first()
+        )
+        assert row is not None
+        return Party(
+            id=row["party_id"],
+            name=row["name"],
+            party_size=row["party_size"],
         )
 
-@router.post("/{party_id}/tabs", response_model=tabsResponse)
-def create_party_tab(party_id: int, tab_items: List[foodItem]):
+
+@router.post("/{party_id}/tabs", response_model=TabsResponse)
+def create_party_tab(party_id: int, tab_items: List[FoodItem]):
     with db.engine.begin() as conn:
         party_row = (
             conn.execute(
                 sqlalchemy.text(
-                    """
-                    SELECT party_id, tab_id 
-                    FROM parties 
-                    WHERE party_id = :party_id
-                    """
+                    "SELECT party_id, table_id FROM parties WHERE party_id = :party_id"
                 ),
-                {"party_id": party_id}
-            ).mapping().first()
+                {"party_id": party_id},
+            )
+            .mappings()
+            .first()
         )
 
         if not party_row:
             raise HTTPException(status_code=404, detail="Party not found")
-        
+
         table_id = party_row["table_id"]
-        total_price = sum(item.price for item in tab_items)
-        
-        tab_row = conn.execute(
-            sqlalchemy.text(
-                """
-                INSERT INTO tabs (party_id, table_id, total_price) 
-                VALUES (:party_id, :table_id, :total_price) 
-                RETURNING tab_id, created_at
-                """
-            ),
-            {"party_id": party_id, "table_id": table_id, "total_price": total_price}
-        ).mapping().first()
-            
-        tab_id = tab_row["tab_id"]["tab_id"]
+        total_price = sum(item.quantity * item.unit_price for item in tab_items)
+
+        tab_row = (
+            conn.execute(
+                sqlalchemy.text(
+                    """
+                    INSERT INTO tabs (party_id, table_id, total_price)
+                    VALUES (:party_id, :table_id, :total_price)
+                    RETURNING tab_id, created_at
+                    """
+                ),
+                {
+                    "party_id": party_id,
+                    "table_id": table_id,
+                    "total_price": total_price,
+                },
+            )
+            .mappings()
+            .first()
+        )
+        assert tab_row is not None
+
+        tab_id = tab_row["tab_id"]
         created_at = tab_row["created_at"]
-        
+
         for item in tab_items:
             conn.execute(
                 sqlalchemy.text(
@@ -97,128 +119,151 @@ def create_party_tab(party_id: int, tab_items: List[foodItem]):
                     """
                 ),
                 {
-                    "tab_id": tab_id, 
+                    "tab_id": tab_id,
                     "item_name": item.name,
                     "quantity": item.quantity,
-                    "unit_price": item.price
-                }
+                    "unit_price": item.unit_price,
+                },
+            )
 
-                response = partyTab(
+        return TabsResponse(
+            tabs=[
+                PartyTab(
                     id=tab_id,
                     party_id=party_id,
                     tab_items=tab_items,
                     total_price=total_price,
-                    created_at=created_at
+                    created_at=str(created_at),
                 )
-                return tabsResponse(tabs=[response])
-            )
+            ]
+        )
 
-@router.get("/{party_id}/", response_model=party)
+
+@router.get("/{party_id}/", response_model=Party)
 def get_party(party_id: int):
-    with db.engine.connect() as connection:
-        row = connection.execute(
-            sqlalchemy.text("""
-                    SELECT party_id AS id, name, party_size
+    with db.engine.connect() as conn:
+        row = (
+            conn.execute(
+                sqlalchemy.text(
+                    """
+                    SELECT party_id, name, party_size
                     FROM parties
                     WHERE party_id = :party_id
-                    """)
-                    ,{"party_id": party_id}
-        ).mapping().first()
+                    """
+                ),
+                {"party_id": party_id},
+            )
+            .mappings()
+            .first()
+        )
 
         if not row:
             raise HTTPException(status_code=404, detail="Party not found")
 
-        return party(
-            id=row["id"],
+        return Party(
+            id=row["party_id"],
             name=row["name"],
-            party_size=row["party_size"]
+            party_size=row["party_size"],
         )
-    
+
+
 @router.delete("/{party_id}/", status_code=status.HTTP_204_NO_CONTENT)
 def delete_party(party_id: int):
-    with db.engine.connect() as connection:
-        connection.execute(
-            db.text("""
-                    DELETE FROM parties WHERE id = :party_id
-                    """),
-            {"party_id": party_id}
+    with db.engine.begin() as conn:
+        conn.execute(
+            sqlalchemy.text("DELETE FROM parties WHERE party_id = :party_id"),
+            {"party_id": party_id},
         )
-    
-    
-@router.get("/{party_id}/tabs", response_model=tabsResponse)
+
+
+@router.get("/{party_id}/tabs", response_model=TabsResponse)
 def get_party_tabs(party_id: int):
-    with db.engine.connect() as connection:
-        row = connection.execute(
-            sqlalchemy.text("""
-                    SELECT table_id, tab_id AS tab, 
-                           party_id AS Party, total_price AS Total,
-                           item_name AS Items, quantity AS Quantity, 
-                           unit_price AS ItemPrice,
-                           created_at AS Time
+    with db.engine.connect() as conn:
+        rows = (
+            conn.execute(
+                sqlalchemy.text(
+                    """
+                    SELECT
+                        tabs.tab_id,
+                        tabs.party_id,
+                        tabs.total_price,
+                        tabs.created_at,
+                        tab_items.item_name,
+                        tab_items.quantity,
+                        tab_items.unit_price
                     FROM tabs
-                    JOIN tab_items ON tabs.tab_id = tab_items.tab_id
-                    WHERE party_id = :party_id
-                    """)
-                    ,{"party_id": party_id}
-        ) 
-
-        if not row:
-            raise HTTPException(status_code=404, detail="Party not found")
-        
-        total_price = sum{ItemPrice * quantity for ItemPrice, quantity in row}
-
-        return partyTab(
-            id=tab_id,
-            party_id=party_id,
-            tab_items=tab_items,
-            total_price=total_price,
-            created_at=str(datetime.utcnow())
+                    LEFT JOIN tab_items ON tabs.tab_id = tab_items.tab_id
+                    WHERE tabs.party_id = :party_id
+                    ORDER BY tabs.tab_id
+                    """
+                ),
+                {"party_id": party_id},
+            )
+            .mappings()
+            .all()
         )
 
-                        
+        if not rows:
+            raise HTTPException(status_code=404, detail="No tabs found for party")
 
-@router.patch("/{party_id}/tabs/{tab_id}", response_model=partyTab)
-def update_party_tab(party_id: int, tab_id: int, tab_items: List[foodItem]):
+        tabs_by_id: dict = {}
+        for row in rows:
+            tid = row["tab_id"]
+            if tid not in tabs_by_id:
+                tabs_by_id[tid] = {
+                    "id": tid,
+                    "party_id": row["party_id"],
+                    "tab_items": [],
+                    "total_price": row["total_price"],
+                    "created_at": str(row["created_at"]),
+                }
+            if row["item_name"] is not None:
+                tabs_by_id[tid]["tab_items"].append(
+                    FoodItem(
+                        name=row["item_name"],
+                        quantity=row["quantity"],
+                        unit_price=row["unit_price"],
+                    )
+                )
+
+        return TabsResponse(tabs=[PartyTab(**t) for t in tabs_by_id.values()])
+
+
+@router.patch("/{party_id}/tabs/{tab_id}", response_model=PartyTab)
+def update_party_tab(party_id: int, tab_id: int, tab_items: List[FoodItem]):
     with db.engine.begin() as conn:
         party_row = (
             conn.execute(
                 sqlalchemy.text(
-                    """
-                    SELECT party_id 
-                    FROM parties 
-                    WHERE party_id = :party_id
-                    """
+                    "SELECT party_id FROM parties WHERE party_id = :party_id"
                 ),
-                {"party_id": party_id}
-            ).mapping().first()
+                {"party_id": party_id},
+            )
+            .mappings()
+            .first()
         )
 
         if not party_row:
             raise HTTPException(status_code=404, detail="Party not found")
-        
-        total_price = sum(item.price for item in tab_items)
-        
+
+        total_price = sum(item.quantity * item.unit_price for item in tab_items)
+
         conn.execute(
             sqlalchemy.text(
                 """
-                UPDATE tabs 
-                SET total_price = :total_price 
+                UPDATE tabs
+                SET total_price = :total_price
                 WHERE tab_id = :tab_id AND party_id = :party_id
                 """
             ),
-            {"total_price": total_price, "tab_id": tab_id, "party_id": party_id}
+            {"total_price": total_price, "tab_id": tab_id, "party_id": party_id},
         )
-        
+
         conn.execute(
-            sqlalchemy.text(
-                """
-                DELETE FROM tab_items 
-                WHERE tab_id = :tab_id
-                """
-            ),
-            {"tab_id": tab_id}
+            sqlalchemy.text("DELETE FROM tab_items WHERE tab_id = :tab_id"),
+            {"tab_id": tab_id},
         )
-        
+
         for item in tab_items:
             conn.execute(
                 sqlalchemy.text(
@@ -228,17 +273,17 @@ def update_party_tab(party_id: int, tab_id: int, tab_items: List[foodItem]):
                     """
                 ),
                 {
-                    "tab_id": tab_id, 
+                    "tab_id": tab_id,
                     "item_name": item.name,
                     "quantity": item.quantity,
-                    "unit_price": item.price
-                }
+                    "unit_price": item.unit_price,
+                },
             )
-            
-        return partyTab(
+
+        return PartyTab(
             id=tab_id,
             party_id=party_id,
             tab_items=tab_items,
             total_price=total_price,
-            created_at=str(datetime.utcnow())
+            created_at=str(datetime.utcnow()),
         )
