@@ -1,10 +1,8 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from typing import List
+import sqlalchemy
 from src.api import auth
 from src import database as db
-import sqlalchemy
-from datetime import datetime
 
 router = APIRouter(
     prefix="/reservations",
@@ -13,52 +11,61 @@ router = APIRouter(
 )
 
 
-class reservation(BaseModel):
+class ReservationCreate(BaseModel):
+    customer_name: str
+    table_id: int
+    party_size: int
+    reservation_time: str
+
+
+class ReservationResponse(BaseModel):
     reservation_id: int
     customer_name: str
-    party_size: int
     table_id: int
-    time: datetime
+    party_size: int
+    reservation_time: str
+    status: str
 
 
-class reservationResponse(BaseModel):
-    id: int
-    party_name: str
-    table_ids: List[int]
-    time: datetime
+@router.post("/", response_model=ReservationResponse)
+def create_reservation(body: ReservationCreate):
+    with db.engine.begin() as conn:
+        table_exists = conn.execute(
+            sqlalchemy.text("SELECT 1 FROM tables WHERE table_id = :table_id"),
+            {"table_id": body.table_id},
+        ).scalar_one_or_none()
+        if table_exists is None:
+            raise HTTPException(status_code=404, detail="Table not found")
 
+        reservation_id = conn.execute(
+            sqlalchemy.text(
+                """
+                INSERT INTO reservations
+                    (customer_name, table_id, party_size, reservation_time, status)
+                VALUES
+                    (:customer_name, :table_id, :party_size, :reservation_time, 'reserved')
+                RETURNING reservation_id
+                """
+            ),
+            body.model_dump(),
+        ).scalar_one()
 
-@router.post("/{party_id}", response_model=reservationResponse)
-def make_reservation(party_name: str, party_size: int, table_id: int, time: datetime):
-    pass
+        conn.execute(
+            sqlalchemy.text(
+                """
+                UPDATE tables
+                SET status = 'reserved', reserved_for = :customer_name
+                WHERE table_id = :table_id
+                """
+            ),
+            {"customer_name": body.customer_name, "table_id": body.table_id},
+        )
 
-
-## Find reservation for a table
-@router.get("/{party_id}", response_model=List[reservationResponse])
-def get_reservation(party_id: int, table_id: int):
-    query = sqlalchemy.text("""
-        SELECT 
-            reservation_id, 
-            customer_name, 
-            party_size, 
-            table_id, 
-            time
-        FROM reservations
-        WHERE table_id = :table_id AND party_id = :party_id
-        ORDER BY time
-    """)
-    with db.engine.connect() as conn:
-        conn.execute(query)
-
-
-@router.delete("/{party_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_reservation(party_id: int):
-    pass
-
-
-## POtable_idST reservations/{party_id]}
-@router.post("/{party_id}", response_model=List[reservationResponse])
-def assign_party(
-    party_id: int,
-):
-    pass
+    return ReservationResponse(
+        reservation_id=reservation_id,
+        customer_name=body.customer_name,
+        table_id=body.table_id,
+        party_size=body.party_size,
+        reservation_time=body.reservation_time,
+        status="reserved",
+    )

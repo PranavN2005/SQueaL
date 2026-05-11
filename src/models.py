@@ -22,15 +22,17 @@ class Table(Base):
 
     table_id = Column(Integer, primary_key=True)
     capacity = Column(Integer, nullable=False)
-    status = Column(String, nullable=False, default="available")
+    status = Column(String, nullable=False, default="open")
     assigned_waiter_id = Column(
         Integer, ForeignKey("employees.employee_id"), nullable=True
     )
     current_party_size = Column(Integer, nullable=True)
+    reserved_for = Column(String, nullable=True)
 
     assigned_waiter = relationship("Employee", back_populates="tables")
     parties = relationship("Party", back_populates="table")
     reservations = relationship("Reservation", back_populates="table")
+    tabs = relationship("Tab", back_populates="table")
 
 
 class Party(Base):
@@ -58,11 +60,26 @@ class Tab(Base):
     __tablename__ = "tabs"
 
     tab_id = Column(Integer, primary_key=True)
-    party_id = Column(Integer, ForeignKey("parties.party_id"), nullable=False)
+    party_id = Column(Integer, ForeignKey("parties.party_id"), nullable=True)
+    table_id = Column(Integer, ForeignKey("tables.table_id"), nullable=True)
     total_price = Column(Float, nullable=False, default=0.0)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     party = relationship("Party", back_populates="tabs")
+    table = relationship("Table", back_populates="tabs")
+    items = relationship("TabItem", back_populates="tab")
+
+
+class TabItem(Base):
+    __tablename__ = "tab_items"
+
+    tab_item_id = Column(Integer, primary_key=True)
+    tab_id = Column(Integer, ForeignKey("tabs.tab_id"), nullable=False)
+    item_name = Column(String, nullable=False)
+    quantity = Column(Integer, nullable=False)
+    unit_price = Column(Float, nullable=False)
+
+    tab = relationship("Tab", back_populates="items")
 
 
 class Reservation(Base):
@@ -72,7 +89,8 @@ class Reservation(Base):
     customer_name = Column(String, nullable=False)
     party_size = Column(Integer, nullable=False)
     table_id = Column(Integer, ForeignKey("tables.table_id"), nullable=False)
-    reservation_time = Column(DateTime, nullable=False)
+    reservation_time = Column(String, nullable=False)
+    status = Column(String, nullable=False, default="reserved")
     created_at = Column(DateTime, default=datetime.utcnow)
 
     table = relationship("Table", back_populates="reservations")
