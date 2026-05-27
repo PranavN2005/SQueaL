@@ -1,145 +1,191 @@
-# Concurrency Control in SQueaL
+# Concurrency Control
 
-SQueaL runs every request through SQLAlchemy against PostgreSQL, whose default
-isolation level is **READ COMMITTED**. READ COMMITTED prevents dirty reads, but
-on its own it still allows **non-repeatable reads, phantoms, and lost updates**
-across the multiple statements that make up one of our transactions. Several of
-our endpoints *read* a tab and then *write* based on what they read, so those
-phenomena are real risks here. (Phenomenon definitions:
-<https://observablehq.com/@calpoly-pierce/isolation-levels>.)
+SQueaL is a restaurant table, reservation, and tab service. The main concurrent
+users are hosts and servers making overlapping updates to the same tables, tabs,
+reservations, and payments.
 
-The hot object in SQueaL is a single **tab** — its row in `tabs` plus its rows
-in `tab_items`. Our strategy is **pessimistic row locking**: every transaction
-that mutates a tab first runs
-`SELECT ... FROM tabs WHERE tab_id = :id FOR UPDATE`, taking an exclusive lock on
-that tab's row for the life of the transaction. Operations on *different* tabs
-stay fully concurrent; operations on the *same* tab serialize. We prefer this to
-raising the whole transaction to `SERIALIZABLE` because the contention is on one
-well-identified row, the critical section is short, and `FOR UPDATE` gives
-deterministic blocking instead of serialization-failure retries.
+The service already groups multi-statement writes with SQLAlchemy
+`db.engine.begin()`, so each endpoint either commits all of its related SQL work
+or rolls it back on error. PostgreSQL's default `READ COMMITTED` isolation also
+prevents dirty reads. The checkout endpoint goes further and locks the tab row
+with `SELECT ... FOR UPDATE` before it computes the bill, inserts a payment, and
+marks the tab paid.
 
-Below are three cases where, **without** that control, SQueaL would hit a
-concurrency phenomenon.
+That is the right pattern for most of this service: every operation that mutates
+a tab should first lock the parent `tabs` row, and every operation that mutates a
+table's reservation or seating state should lock the parent `tables` row. For
+reservation availability checks, where correctness depends on the absence of a
+matching reservation row, we should also enforce a unique database constraint on
+active reservation slots and run the availability transaction at `SERIALIZABLE`
+or lock the relevant table row before checking and inserting.
 
----
+## Controls We Will Use
 
-## Case 1 — Lost update: two concurrent checkouts of the same tab
+- Keep all write endpoints inside explicit database transactions.
+- Use `SELECT ... FOR UPDATE` on the logical owner row before changing dependent
+  rows:
+  - `tabs` before adding items, splitting items, or checking out.
+  - `tables` before reserving, seating, resetting, or changing occupancy state.
+- Recheck business preconditions after acquiring the lock, not before it. For
+  example, after locking a tab, verify that `tabs.status = 'open'`.
+- Add database constraints for invariants that must never be violated:
+  - one successful payment per tab, enforced with a unique key on
+    `payments(tab_id)`;
+  - one active reservation per table and reservation time, enforced with a
+    unique key on `(table_id, reservation_time)` for active reservations.
+- Use `SERIALIZABLE` plus retry logic for transactions that choose an available
+  table by searching a set of candidates. Row locks are enough when the endpoint
+  already targets one known row, but predicate-style availability checks need
+  serializable isolation or a database uniqueness constraint to prevent phantoms.
 
-**Transactions:** two instances of `POST /tabs/{tab_id}/checkout`.
+## Case 1: Double Booking A Table
 
-**Phenomenon (no control):** both transactions read the tab as `status = 'open'`,
-both recompute the bill, and both `INSERT` a `payments` row and set
-`status = 'paid'`. The second write is made from a stale read of `status`, so the
-first checkout's effect is lost — the guest is charged twice and two payment rows
-exist for one tab. This is a **lost update**.
+**Phenomenon:** phantom read, with a lost update on `tables.reserved_for`.
 
-```mermaid
-sequenceDiagram
-    participant A as Checkout A
-    participant DB as PostgreSQL (tab 5)
-    participant B as Checkout B
-    A->>DB: SELECT status FROM tabs WHERE tab_id=5  -> 'open'
-    B->>DB: SELECT status FROM tabs WHERE tab_id=5  -> 'open'
-    A->>DB: INSERT payments; UPDATE tabs SET status='paid'
-    A-->>DB: COMMIT
-    B->>DB: INSERT payments; UPDATE tabs SET status='paid'
-    B-->>DB: COMMIT
-    Note over DB: Tab 5 charged twice -- two payment rows. Lost update.
-```
-
-**Control:** checkout opens with
-`SELECT ... FROM tabs WHERE tab_id = :id FOR UPDATE`. Checkout A takes the lock;
-Checkout B blocks until A commits, then re-reads `status = 'paid'` and returns
-`409 Conflict`. (Already implemented in `checkout.py`.) **Why it fits:** the
-conflict is a write-write race on a single row, so a row-level lock is the
-minimal, deterministic guard, and under READ COMMITTED the lock holder is
-guaranteed to read the latest committed version of the row it locked.
-
----
-
-## Case 2 — Phantom: an item is added while a tab is being checked out
-
-**Transactions:** `POST /tabs/{tab_id}/checkout` vs.
-`PATCH /tables/{table_id}/tabs/{tab_id}` (add items to a tab).
-
-**Phenomenon (no control):** checkout reads the *set* of `tab_items` to total the
-bill. A concurrent add-item `INSERT`s a new `tab_items` row and commits *after*
-checkout's read but *before* checkout finalizes. That new row is a **phantom** —
-it was never in the set checkout billed, so the guest underpays and the item ends
-up on a tab that is now closed and paid.
+Two hosts can try to reserve the same table for the same time. If the service
+only checks whether a matching reservation exists and then inserts later, both
+transactions can observe "no reservation" before either insert commits.
 
 ```mermaid
 sequenceDiagram
-    participant CO as Checkout
-    participant DB as PostgreSQL (tab 5)
-    participant AI as Add-item
-    CO->>DB: SELECT * FROM tab_items WHERE tab_id=5  -> 2 items
-    AI->>DB: INSERT tab_items (tab_id=5, 'Wine', 14.00)
-    AI-->>DB: COMMIT
-    CO->>DB: INSERT payments(total of 2 items); UPDATE tabs SET status='paid'
-    CO-->>DB: COMMIT
-    Note over DB: 'Wine' never billed -- phantom row on a closed tab.
+    participant H1 as Host 1 transaction
+    participant DB as PostgreSQL
+    participant H2 as Host 2 transaction
+
+    H1->>DB: BEGIN
+    H1->>DB: SELECT reservations WHERE table_id=7 AND time='7pm'
+    DB-->>H1: no rows
+    H2->>DB: BEGIN
+    H2->>DB: SELECT reservations WHERE table_id=7 AND time='7pm'
+    DB-->>H2: no rows
+    H1->>DB: INSERT reservation for Alice
+    H1->>DB: UPDATE tables SET reserved_for='Alice'
+    H2->>DB: INSERT reservation for Bob
+    H2->>DB: UPDATE tables SET reserved_for='Bob'
+    H1->>DB: COMMIT
+    H2->>DB: COMMIT
+    DB-->>H1: two active reservations exist; table display only shows Bob
 ```
 
-**Control:** the add-item endpoint must take the *same* tab lock
-(`SELECT ... FROM tabs WHERE tab_id = :id FOR UPDATE`) before inserting. Because
-checkout holds that lock for its whole transaction, a concurrent add-item blocks
-until checkout commits — then sees `status = 'paid'` and is rejected; conversely
-checkout waits for an in-flight add-item, so its `tab_items` read is complete.
-**Why it fits:** serializing every tab mutation on the tab row turns the phantom
-into an ordered sequence, at the cost of one row lock rather than the broader
-overhead of `SERIALIZABLE`. *(Add-item does not yet take this lock — adopting it
-is the fix this case requires.)*
+**Isolation plan:** `POST /reservations` should lock the target table row with
+`SELECT table_id FROM tables WHERE table_id = :table_id FOR UPDATE`, then check
+capacity and existing active reservations, insert the reservation, and update the
+table status in the same transaction. A unique constraint on active
+`(table_id, reservation_time)` should be the final guardrail. If we later support
+"find any available table for this party size and time", that search should use
+`SERIALIZABLE` isolation and retry on serialization failure because the
+transaction depends on the absence of rows in a predicate range.
 
----
+**Why this is appropriate:** a reservation for a specific table is owned by one
+`tables` row, so a row lock serializes conflicting reservations without blocking
+unrelated tables. The unique constraint protects the invariant even if a future
+code path forgets to take the lock.
 
-## Case 3 — Lost update: two concurrent splits of the same tab
+## Case 2: Checkout While Another Server Adds Items
 
-**Transactions:** two instances of
-`POST /tables/{table_id}/tabs/{tab_id}/split`.
+**Phenomenon:** phantom read / serialization anomaly.
 
-**Phenomenon (no control):** split reads the available quantity of each item,
-checks there is "enough to move," then deletes/decrements `tab_items` and
-re-inserts them on a new tab. Two concurrent splits both read the same
-availability, both pass the check, and both move the same items — so the items
-are moved twice (duplicated onto two new tabs, or the source quantities driven
-negative). Each write is based on a stale read of the quantities: a **lost
-update** (and a phantom over the `tab_items` set).
+A checkout computes the bill by reading all `tab_items` for a tab. At the same
+time, another server may add an item to that same tab. Without a shared lock on
+the parent tab, checkout can charge the customer for one set of rows while a
+newly inserted item appears immediately afterward.
 
 ```mermaid
 sequenceDiagram
-    participant S1 as Split A
-    participant DB as PostgreSQL (tab 5)
-    participant S2 as Split B
-    S1->>DB: SELECT qty FROM tab_items WHERE tab_id=5  -> 3 x Beer
-    S2->>DB: SELECT qty FROM tab_items WHERE tab_id=5  -> 3 x Beer
-    S1->>DB: move 3 x Beer -> new tab 9
-    S1-->>DB: COMMIT
-    S2->>DB: move 3 x Beer -> new tab 10
-    S2-->>DB: COMMIT
-    Note over DB: 3 beers moved twice -- 6 beers exist / source corrupted. Lost update.
+    participant C as Checkout transaction
+    participant DB as PostgreSQL
+    participant S as Server add-item transaction
+
+    C->>DB: BEGIN
+    C->>DB: SELECT status FROM tabs WHERE tab_id=55
+    DB-->>C: open
+    C->>DB: SELECT * FROM tab_items WHERE tab_id=55
+    DB-->>C: burger, soda
+    S->>DB: BEGIN
+    S->>DB: SELECT tab 55
+    DB-->>S: open
+    S->>DB: INSERT tab_items(tab_id=55, item_name='dessert')
+    S->>DB: COMMIT
+    C->>DB: INSERT payment based only on burger and soda
+    C->>DB: UPDATE tabs SET status='paid'
+    C->>DB: COMMIT
+    DB-->>C: tab is paid but dessert was never charged
 ```
 
-**Control:** split must run
-`SELECT ... FROM tabs WHERE tab_id = :id FOR UPDATE` before reading the items (it
-currently does not). Split B then blocks until Split A commits and re-reads the
-*reduced* quantities, so its "enough to move" check is evaluated against the true
-remaining stock. **Why it fits:** it is the same single-row pessimistic lock as
-checkout — uniform across the codebase, low overhead, and free of serialization
-retries.
+**Isolation plan:** checkout, add-item, and split-item transactions should all
+begin by locking the same parent row:
 
----
+```sql
+SELECT tab_id, status
+FROM tabs
+WHERE tab_id = :tab_id
+FOR UPDATE;
+```
+
+After the lock is acquired, each transaction should verify that the tab is still
+`open`. If checkout gets the lock first, the add-item transaction waits and then
+returns a conflict because the tab is already `paid`. If add-item gets the lock
+first, checkout waits and then includes the newly committed item in its total.
+
+**Why this is appropriate:** all line items for a bill are logically owned by
+the parent tab. Locking that one row is cheaper and clearer than locking the
+whole `tab_items` table, and it prevents phantoms for this workflow because every
+writer agrees to acquire the same tab lock before inserting or deleting child
+rows.
+
+## Case 3: Two Servers Split The Same Item
+
+**Phenomenon:** lost update / serialization anomaly.
+
+The split endpoint reads the available item quantities, creates a new tab, then
+deletes or decrements rows from the original tab. If two split transactions move
+the same item at the same time, both can base their validation on the same
+starting quantity.
+
+```mermaid
+sequenceDiagram
+    participant S1 as Server 1 split transaction
+    participant DB as PostgreSQL
+    participant S2 as Server 2 split transaction
+
+    S1->>DB: BEGIN
+    S1->>DB: SELECT tab_items WHERE tab_id=55
+    DB-->>S1: coke quantity=1
+    S2->>DB: BEGIN
+    S2->>DB: SELECT tab_items WHERE tab_id=55
+    DB-->>S2: coke quantity=1
+    S1->>DB: INSERT new tab 56
+    S1->>DB: DELETE original coke row
+    S2->>DB: INSERT new tab 57
+    S2->>DB: DELETE original coke row
+    S1->>DB: COMMIT
+    S2->>DB: COMMIT
+    DB-->>S2: one coke was moved into two different split tabs
+```
+
+**Isolation plan:** `POST /tables/{table_id}/tabs/{tab_id}/split` should lock
+the parent `tabs` row before it loads item quantities. It should also perform
+the quantity changes with checked updates/deletes inside that same transaction,
+so a rowcount of zero is treated as a conflict instead of success. The endpoint
+should return `409 Conflict` when a concurrent split or checkout changed the tab
+before this split could commit.
+
+**Why this is appropriate:** splitting is a read-modify-write transaction over
+the set of items in one tab. `READ COMMITTED` alone gives each statement a fresh
+snapshot, but it does not make the whole split behave like one serial action.
+The parent-row lock makes every split, add-item, and checkout for the same tab
+run in a single order while still allowing different tabs to be split
+concurrently.
 
 ## Summary
 
-| Case | Transactions | Phenomenon | Control |
-|------|--------------|------------|---------|
-| 1 | checkout × checkout | Lost update | `FOR UPDATE` on the tab row (implemented) |
-| 2 | checkout × add-item | Phantom | `FOR UPDATE` on the tab row in add-item |
-| 3 | split × split | Lost update | `FOR UPDATE` on the tab row in split |
+`READ COMMITTED` is sufficient for simple primary-key reads and updates, and it
+prevents dirty reads in PostgreSQL. It is not enough by itself for SQueaL's
+multi-step restaurant workflows because those workflows validate state, update
+dependent rows, and create financial or reservation side effects. The right
+concurrency control is short transactions with explicit row locks on the logical
+owner row, plus database constraints for invariants and `SERIALIZABLE` isolation
+for availability searches that depend on the absence of matching rows.
 
-**One rule:** every transaction that mutates a tab — checkout, split, add-items —
-first locks that tab's row with `SELECT ... FOR UPDATE`. Different tabs remain
-fully concurrent; operations on the same tab serialize. We stay at PostgreSQL's
-default READ COMMITTED isolation everywhere else, since these row locks address
-the specific phenomena above without the retry overhead of `SERIALIZABLE`.
+Citations: ObservableHQ Isolation levels notes.
+**ChatGPT used to format rawtext to Markdown.**
