@@ -204,7 +204,104 @@ GET /tables/3/tabs/55
 
 ---
 
-## 6. Get All Tables
+## 6. Split Tab Items
+
+### `POST /tables/{table_id}/tabs/{tab_id}/split`
+
+Moves selected items from an existing tab into a new tab for the same table.
+
+**Example request**
+```http
+POST /tables/3/tabs/55/split
+```
+**Example tab 55**
+{
+  "tab_id": 55,
+  "table_id": 3,
+  "items": [
+    {
+      "item_name": "Coke",
+      "quantity": 2,
+      "unit_price": 3.5,
+      "line_total": 7.0
+    },
+    {
+      "item_name": "Burger",
+      "quantity": 2,
+      "unit_price": 12.5,
+      "line_total": 25.0
+    }
+  ],
+  "subtotal": 32.0,
+  "tax": 2.0,
+  "total": 34.0
+}
+
+**Example request body**
+```json
+{
+  "items_to_move": [
+    {
+      "item_name": "Coke",
+      "quantity": 1,
+      "unit_price": 3.5
+    },
+    {
+      "item_name": "Burger",
+      "quantity": 1,
+      "unit_price": 12.5
+    }
+  ]
+}
+```
+
+**Example response**
+```json
+{
+  "original_tab": {
+    "tab_id": 55,
+    "table_id": 3,
+    "items": [
+      {
+        "item_name": "Coke",
+        "quantity": 1,
+        "unit_price": 3.5,
+        "line_total": 3.5
+      },
+      {
+        "item_name": "Burger",
+        "quantity": 1,
+        "unit_price": 12.5,
+        "line_total": 12.5
+      }
+    ],
+    "subtotal": 16.0
+  },
+  "new_tab": {
+    "tab_id": 56,
+    "table_id": 3,
+    "items": [
+      {
+        "item_name": "Coke",
+        "quantity": 1,
+        "unit_price": 3.5,
+        "line_total": 3.5
+      },
+      {
+        "item_name": "Burger",
+        "quantity": 1,
+        "unit_price": 12.5,
+        "line_total": 12.5
+      }
+    ],
+    "subtotal": 16.0
+  }
+}
+```
+
+---
+
+## 7. Get All Tables
 
 ### `GET /tables`
 
@@ -247,7 +344,7 @@ GET /tables
 
 ---
 
-## 7. Get Servers Working a Shift
+## 8. Get Servers Working a Shift
 
 ### `GET /shifts/{shift_id}/servers`
 
@@ -276,7 +373,7 @@ GET /shifts/4/servers
 
 ---
 
-## 8. Add a Server to a Shift
+## 9. Add a Server to a Shift
 
 ### `POST /shifts/{shift_id}/servers`
 
@@ -304,7 +401,7 @@ POST /shifts/4/servers
 
 ---
 
-## 9. Update Table State
+## 10. Update Table State
 
 ### `PATCH /tables/{table_id}`
 
@@ -338,7 +435,7 @@ PATCH /tables/3
 
 ---
 
-## 10. Reset Table
+## 11. Reset Table
 
 ### `POST /tables/{table_id}/reset`
 
