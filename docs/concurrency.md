@@ -1,18 +1,17 @@
 # Concurrency Control
 
-SQueaL is a restaurant table, reservation, and tab service. The main concurrent
-users are hosts and servers making overlapping updates to the same tables, tabs,
-reservations, and payments.
+Our main concurrent
+users are as a restaurant table, reservation, and tab service hosts and servers making overlapping updates to the same tables, tabs,
+reservations, and/or payments.
 
-The service already groups multi-statement writes with SQLAlchemy
+We already group multi-statement writes within each SQLAlchemy
 `db.engine.begin()`, so each endpoint either commits all of its related SQL work
 or rolls it back on error. PostgreSQL's default `READ COMMITTED` isolation also
 prevents dirty reads. The checkout endpoint goes further and locks the tab row
 with `SELECT ... FOR UPDATE` before it computes the bill, inserts a payment, and
 marks the tab paid.
 
-That is the right pattern for most of this service: every operation that mutates
-a tab should first lock the parent `tabs` row, and every operation that mutates a
+The right pattern for most of our services should be: every operation that mutates a tab should first lock the parent `tabs` row, and every operation that mutates a
 table's reservation or seating state should lock the parent `tables` row. For
 reservation availability checks, where correctness depends on the absence of a
 matching reservation row, we should also enforce a unique database constraint on
@@ -64,7 +63,7 @@ sequenceDiagram
     H2->>DB: UPDATE tables SET reserved_for='Bob'
     H1->>DB: COMMIT
     H2->>DB: COMMIT
-    DB-->>H1: two active reservations exist; table display only shows Bob
+    DB-->>H1: two active reservations exist and the table display only shows Bob
 ```
 
 **Isolation plan:** `POST /reservations` should lock the target table row with
