@@ -165,8 +165,8 @@ sequenceDiagram
 **Isolation plan:** `POST /tables/{table_id}/tabs/{tab_id}/split` should lock
 the parent `tabs` row before it loads item quantities. It should also perform
 the quantity changes with checked updates/deletes inside that same transaction,
-so a rowcount of zero is treated as a conflict instead of success. The endpoint
-should return `409 Conflict` when a concurrent split or checkout changed the tab
+so a rowcount of zero is treated as a conflict instead of returnng success. The endpoint
+should also `409 Conflict` when a concurrent split or checkout changed the tab
 before this split could commit.
 
 **Why this is appropriate:** splitting is a read-modify-write transaction over
@@ -179,9 +179,9 @@ concurrently.
 ## Summary
 
 `READ COMMITTED` is sufficient for simple primary-key reads and updates, and it
-prevents dirty reads in PostgreSQL. It is not enough by itself for SQueaL's
-multi-step restaurant workflows because those workflows validate state, update
-dependent rows, and create financial or reservation side effects. The right
+prevents dirty reads in PostgreSQL. It isnt enough by itself for our
+multi-step restaurant workflows because those workflows have to validate state, update
+dependent rows, and create/propogate financial or reservation side effects. The right
 concurrency control is short transactions with explicit row locks on the logical
 owner row, plus database constraints for invariants and `SERIALIZABLE` isolation
 for availability searches that depend on the absence of matching rows.
