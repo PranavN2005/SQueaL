@@ -8,6 +8,24 @@ from src.database import engine
 from src.api.checkout import checkout_tab, CheckoutRequest
 
 
+def _db_reachable() -> bool:
+    try:
+        with engine.connect() as conn:
+            conn.execute(sqlalchemy.text("SELECT 1"))
+        return True
+    except Exception:
+        return False
+
+
+# Integration tests against a real Postgres. CI has no database, so skip the
+# module when the DB isn't reachable (these still run locally where it is).
+if not _db_reachable():
+    pytest.skip(
+        "Postgres not reachable — skipping checkout DB tests",
+        allow_module_level=True,
+    )
+
+
 def _create_open_tab(items):
     """Create an open tab on table 1 with the given (name, qty, price) items."""
     with engine.begin() as conn:
