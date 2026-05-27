@@ -460,3 +460,41 @@ POST /tables/3/reset
 
 ---
 
+## 12. Check Out (Pay & Close) a Tab
+
+### `POST /tabs/{tab_id}/checkout`
+
+Pays and closes a tab in a single transaction: locks the tab row, recomputes subtotal + tax + tip, records a row in `payments`, marks the tab `paid` (with `closed_at`), and frees the table (`dirty`). Returns `404` if the tab does not exist and `409` if it is not `open`.
+
+**Example request**
+```http
+POST /tabs/55/checkout
+```
+
+**Example request body**
+```json
+{
+  "payment_method": "card",
+  "tip_amount": 8.00
+}
+```
+
+**Example response**
+```json
+{
+  "payment_id": 12,
+  "tab_id": 55,
+  "table_id": 3,
+  "subtotal": 40.99,
+  "tax": 3.18,
+  "tip": 8.00,
+  "total": 52.17,
+  "payment_method": "card",
+  "paid_at": "2026-05-27T03:30:00Z",
+  "tab_status": "paid",
+  "table_status": "dirty"
+}
+```
+
+---
+
