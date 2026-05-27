@@ -191,16 +191,20 @@ def split_tab(table_id: int, tab_id: int, body: TabSplitRequest):
         raise HTTPException(status_code=400, detail="items_to_move cannot be empty")
 
     with db.engine.begin() as conn:
-        tab_row = conn.execute(
-            sqlalchemy.text(
-                """
+        tab_row = (
+            conn.execute(
+                sqlalchemy.text(
+                    """
                 SELECT tab_id, party_id
                 FROM tabs
                 WHERE tab_id = :tab_id AND table_id = :table_id
                 """
-            ),
-            {"tab_id": tab_id, "table_id": table_id},
-        ).mappings().first()
+                ),
+                {"tab_id": tab_id, "table_id": table_id},
+            )
+            .mappings()
+            .first()
+        )
         if tab_row is None:
             raise HTTPException(status_code=404, detail="Tab not found for this table")
 
@@ -244,9 +248,7 @@ def split_tab(table_id: int, tab_id: int, body: TabSplitRequest):
             if available.get((name, unit_price), 0) < qty:
                 raise HTTPException(
                     status_code=400,
-                    detail=(
-                        "Not enough quantity to move for item"
-                    ),
+                    detail=("Not enough quantity to move for item"),
                 )
 
         new_tab_id = conn.execute(
@@ -315,4 +317,6 @@ def split_tab(table_id: int, tab_id: int, body: TabSplitRequest):
 
     assert original is not None
     assert new_tab is not None
-    return TabSplitResponse(original_tab=TabResponse(**original), new_tab=TabResponse(**new_tab))
+    return TabSplitResponse(
+        original_tab=TabResponse(**original), new_tab=TabResponse(**new_tab)
+    )
