@@ -198,11 +198,7 @@ def list_tabs(table_id: Optional[int] = None):
             ORDER BY t.tab_id
         """
 
-        rows = (
-            conn.execute(sqlalchemy.text(query), params)
-            .mappings()
-            .all()
-        )
+        rows = conn.execute(sqlalchemy.text(query), params).mappings().all()
 
     summaries: List[TabSummary] = []
     for row in rows:
