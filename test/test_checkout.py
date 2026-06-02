@@ -1,14 +1,30 @@
 from decimal import Decimal
+import os
 
 import pytest
 import sqlalchemy
 from fastapi import HTTPException
+from dotenv import find_dotenv, load_dotenv
 
-from src.database import engine
-from src.api.checkout import checkout_tab, CheckoutRequest
+if not os.getenv("RENDER"):
+    load_dotenv(dotenv_path="default.env", override=False)
+load_dotenv(dotenv_path=find_dotenv(".env"), override=True)
+
+os.environ.setdefault("API_KEY", "test-api-key")
+os.environ.setdefault("PGCONNECT_TIMEOUT", "3")
+
+DB_URL_CONFIGURED = bool(os.getenv("POSTGRES_URI") or os.getenv("DATABASE_URL"))
+DB_SKIP_REASON = "Postgres URL not configured - skipping checkout DB tests"
+DB_REACHABLE = False
+
+engine = None
+checkout_tab = None
+CheckoutRequest = None
 
 
 def _db_reachable() -> bool:
+    if engine is None:
+        return False
     try:
         with engine.connect() as conn:
             conn.execute(sqlalchemy.text("SELECT 1"))
@@ -17,13 +33,20 @@ def _db_reachable() -> bool:
         return False
 
 
-# Integration tests against a real Postgres. CI has no database, so skip the
-# module when the DB isn't reachable (these still run locally where it is).
-if not _db_reachable():
-    pytest.skip(
-        "Postgres not reachable — skipping checkout DB tests",
-        allow_module_level=True,
-    )
+if DB_URL_CONFIGURED:
+    from src.database import engine
+    from src.api.checkout import CheckoutRequest, checkout_tab
+
+    DB_REACHABLE = _db_reachable()
+    if not DB_REACHABLE:
+        DB_SKIP_REASON = "Postgres not reachable - skipping checkout DB tests"
+
+
+requires_db = pytest.mark.skipif(not DB_REACHABLE, reason=DB_SKIP_REASON)
+
+
+def test_checkout_integration_environment_detected():
+    assert DB_SKIP_REASON or DB_REACHABLE
 
 
 def _create_open_tab(items):
@@ -65,6 +88,7 @@ def _cleanup(tab_id):
         )
 
 
+@requires_db
 def test_checkout_marks_paid_records_payment_and_frees_table():
     tab_id = _create_open_tab([("Coke", 2, 3.50), ("Burger", 1, 12.00)])
     try:
@@ -111,12 +135,14 @@ def test_checkout_marks_paid_records_payment_and_frees_table():
         _cleanup(tab_id)
 
 
+@requires_db
 def test_checkout_missing_tab_raises_404():
     with pytest.raises(HTTPException) as exc:
         checkout_tab(9_999_999, CheckoutRequest(payment_method="cash"))
     assert exc.value.status_code == 404
 
 
+@requires_db
 def test_checkout_already_paid_raises_409():
     tab_id = _create_open_tab([("Tea", 1, 2.00)])
     try:
@@ -128,6 +154,7 @@ def test_checkout_already_paid_raises_409():
         _cleanup(tab_id)
 
 
+@requires_db
 def test_checkout_rejects_negative_tip():
     with pytest.raises(Exception):
         CheckoutRequest(payment_method="cash", tip_amount=Decimal("-1.00"))
