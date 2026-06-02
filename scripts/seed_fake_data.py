@@ -138,7 +138,7 @@ def make_tab_items(cur, tab_info):
     rows = []
     item_id = 1
     for tab_id, _created, _status, _total in tab_info:
-        n = random.randint(3, 9)
+        n = random.randint(5, 10)
         for _ in range(n):
             name = fake.word().capitalize() + " " + fake.word().capitalize()
             qty = random.choices([1, 2, 3, 4], weights=[80, 12, 5, 3])[0]
