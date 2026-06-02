@@ -5,6 +5,7 @@ import pytest
 import sqlalchemy
 from fastapi import HTTPException
 from dotenv import find_dotenv, load_dotenv
+from sqlalchemy.engine import Engine
 
 if not os.getenv("RENDER"):
     load_dotenv(dotenv_path="default.env", override=False)
@@ -17,14 +18,8 @@ DB_URL_CONFIGURED = bool(os.getenv("POSTGRES_URI") or os.getenv("DATABASE_URL"))
 DB_SKIP_REASON = "Postgres URL not configured - skipping checkout DB tests"
 DB_REACHABLE = False
 
-engine = None
-checkout_tab = None
-CheckoutRequest = None
 
-
-def _db_reachable() -> bool:
-    if engine is None:
-        return False
+def _db_reachable(engine: Engine) -> bool:
     try:
         with engine.connect() as conn:
             conn.execute(sqlalchemy.text("SELECT 1"))
@@ -34,10 +29,9 @@ def _db_reachable() -> bool:
 
 
 if DB_URL_CONFIGURED:
-    from src.database import engine
-    from src.api.checkout import CheckoutRequest, checkout_tab
+    from src.database import engine as db_engine
 
-    DB_REACHABLE = _db_reachable()
+    DB_REACHABLE = _db_reachable(db_engine)
     if not DB_REACHABLE:
         DB_SKIP_REASON = "Postgres not reachable - skipping checkout DB tests"
 
@@ -51,6 +45,8 @@ def test_checkout_integration_environment_detected():
 
 def _create_open_tab(items):
     """Create an open tab on table 1 with the given (name, qty, price) items."""
+    from src.database import engine
+
     with engine.begin() as conn:
         tab_id = conn.execute(
             sqlalchemy.text(
@@ -70,6 +66,8 @@ def _create_open_tab(items):
 
 
 def _cleanup(tab_id):
+    from src.database import engine
+
     with engine.begin() as conn:
         conn.execute(
             sqlalchemy.text("DELETE FROM payments WHERE tab_id = :t"), {"t": tab_id}
@@ -90,6 +88,9 @@ def _cleanup(tab_id):
 
 @requires_db
 def test_checkout_marks_paid_records_payment_and_frees_table():
+    from src.api.checkout import CheckoutRequest, checkout_tab
+    from src.database import engine
+
     tab_id = _create_open_tab([("Coke", 2, 3.50), ("Burger", 1, 12.00)])
     try:
         resp = checkout_tab(
@@ -137,6 +138,8 @@ def test_checkout_marks_paid_records_payment_and_frees_table():
 
 @requires_db
 def test_checkout_missing_tab_raises_404():
+    from src.api.checkout import CheckoutRequest, checkout_tab
+
     with pytest.raises(HTTPException) as exc:
         checkout_tab(9_999_999, CheckoutRequest(payment_method="cash"))
     assert exc.value.status_code == 404
@@ -144,6 +147,8 @@ def test_checkout_missing_tab_raises_404():
 
 @requires_db
 def test_checkout_already_paid_raises_409():
+    from src.api.checkout import CheckoutRequest, checkout_tab
+
     tab_id = _create_open_tab([("Tea", 1, 2.00)])
     try:
         checkout_tab(tab_id, CheckoutRequest(payment_method="cash"))
@@ -156,5 +161,7 @@ def test_checkout_already_paid_raises_409():
 
 @requires_db
 def test_checkout_rejects_negative_tip():
+    from src.api.checkout import CheckoutRequest
+
     with pytest.raises(Exception):
         CheckoutRequest(payment_method="cash", tip_amount=Decimal("-1.00"))
