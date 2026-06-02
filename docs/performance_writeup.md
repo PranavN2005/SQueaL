@@ -77,7 +77,7 @@ This index should allow Postgres to find a table by table_id faster, especially 
 ```
 Update on tables  (cost=0.00..1.62 rows=0 width=0) (actual time=0.07... rows=0 loops=1)
   Buffers: shared hit=4
-  -> Seq Scan on tables  (cost=0.00..1.62 rows=1 width=10)
+  -> Seq Scan on tables  (cost=0.00..1.62 rows`=1 width=10)
         Filter: (table_id = 3)
         Rows Removed by Filter: 49
         Buffers: shared hit=1
