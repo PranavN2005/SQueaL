@@ -37,60 +37,55 @@ Each endpoint was hit against the local DB (~1M rows) and timed with curl's `tim
 
 | Endpoint | Time (ms) |
 |---|---:|
-| `GET /parties/{party_id}/tabs`------------------| 62.6 |
-| `POST /parties/`--------------------------------| 5.3 |
 | `PATCH /tables/{table_id}/assigned_waiter`------| 5.1 |
 | `POST /reservations/`---------------------------| 3.9 |
-| `POST /parties/{party_id}/tabs`-----------------| 3.8 |
 | `PATCH /tables/{table_id}`----------------------| 3.1 |
-| `GET /parties/{party_id}/`----------------------| 3.0 |
 | `GET /tables/{table_id}/tabs/{tab_id}`----------| 2.4 |
 | `GET /employees/`-------------------------------| 2.4 |
 | `GET /tables/`----------------------------------| 2.3 |
 
-The slowest endpoint by a wide margin is **`GET /parties/{party_id}/tabs`** with ~62 ms. Everything else hits small tables or looks up by primary key (already indexed), so they stay in the 2-5 ms range.
+The slowest endpoint by a wide margin is **`PATCH /tables/{table_id}/assigned_waiter`** with ~5.1 ms. 
 
 ## Performance Tuning
-`GET /parties/{party_id}/tabs` joins `tabs` to `tab_items` and filters by `party_id`. Running EXPLAIN ANALYZE:
+The slowest endpoint updates a table’s assigned waiter by `table_id`.
+```
+EXPLAIN ANALYZE
+UPDATE tables
+SET assigned_waiter_id = 3
+WHERE table_id = 3
+```
 
 **Before:**
 ```
-Sort  (cost=14474.22..14474.25 rows=12 width=49) (actual time=60.027...)
-  Sort Key: tabs.tab_id
-  -> Hash Right Join  (cost=2167.03..14474.01 rows=12 width=49)
-       Hash Cond: (tab_items.tab_id = tabs.tab_id)
-       -> Seq Scan on tab_items  (cost=0.00..10734.43 rows=599043)
-       -> Hash  (cost=2167.00..2167.00 rows=2 width=24)
-            -> Seq Scan on tabs  (cost=0.00..2167.00 rows=2)
-                 Filter: (party_id = 1)
-                 Rows Removed by Filter: 99998
-            
-Planning Time: 1.710 ms
-Execution Time: 61.265 ms
+Update on tables  (cost=0.00..1.62 rows=0 width=0) (actual time=1.184..1.185 rows=0 loops=1)
+  Buffers: shared hit=13 dirtied=1
+  -> Seq Scan on tables  (cost=0.00..1.62 rows=1 width=10)
+        Filter: (table_id = 3)
+        Rows Removed by Filter: 49
+        Buffers: shared hit=1
+
+Planning Time: 2.762 ms
+Execution Time: 4.289 ms
 ```
 
-The problem is that it performs two full table scans. tabs scans all 100k rows and throws away 99,998 to find the 2 matching party_id, and tab_items scans all 599k rows for the join. Neither tabs.party_id nor tab_items.tab_id is indexed, so Postgres has no choice but to read every row.
+The query used a sequential scan on tables, meaning Postgres checked every row to find the one where table_id = 3. It removed 49 rows by the filter, so it scanned the whole table instead of jumping directly to the matching row.
 
-```CREATE INDEX idx_tabs_party_id ON tabs (party_id);```
-idx_tabs_party_id lets Postgres jump straight to one party's tabs instead of scanning 100k. 
-
-```CREATE INDEX idx_tab_items_tab_id ON tab_items (tab_id);```
-idx_tab_items_tab_id lets the join look up items by tab_id instead of scanning 599k.
+```CREATE INDEX idx_tables_table_id ON tables(table_id)```
+This index should allow Postgres to find a table by table_id faster, especially more as the tables table grows
 
 **After:**
 ```
-Sort  (cost=29.45..29.48 rows=12 width=49) (actual time=0.529..0.532)
-  Sort Key: tabs.tab_id
-  -> Nested Loop Left Join  (cost=4.73..29.23 rows=12 width=49)
-       -> Bitmap Heap Scan on tabs  (cost=4.31..12.05 rows=2)
-            Recheck Cond: (party_id = 1)`
-            -> Bitmap Index Scan on idx_tabs_party_id
-                 Index Cond: (party_id = 1)
-       -> Index Scan using idx_tab_items_tab_id on tab_items
-            Index Cond: (tab_id = tabs.tab_id)
+Update on tables  (cost=0.00..1.62 rows=0 width=0) (actual time=0.07... rows=0 loops=1)
+  Buffers: shared hit=4
+  -> Seq Scan on tables  (cost=0.00..1.62 rows=1 width=10)
+        Filter: (table_id = 3)
+        Rows Removed by Filter: 49
+        Buffers: shared hit=1
 
-Planning Time: 2.081 ms
-Execution Time: 0.683 ms
+Planning:
+Buffers: shared hit=16 read=1
+Planning Time: 2.741 ms
+Execution Time: 0.140 ms
 ```
-
-Both sequential scans became index scans. Execution dropped from 61.3 ms to 0.68 ms. The "Rows Removed by Filter: 99998" line is gone because Postgres  uses the index to go straight to the matching party's tabs instead of reading the whole table. 
+Postgres still uses sequential scan because the tale is small at 50 rows so index is appropriate for this query pattern.
+The execution time decreased from 4.289 ms to 0.140 ms, indicating a significant performance improvement. The endpoint is now fast enough for the expected workload.
