@@ -13,9 +13,7 @@ N_EMPLOYEES = 40
 N_FOOD_ITEMS = 200
 N_TABLES = 50
 N_RESERVATIONS = 80_000
-N_PARTIES = 110_000
 N_TABS = 100_000
-N_TAB_SPLITS = 10_000
 
 # 3 year fake history
 END = datetime(2026, 6, 1)
@@ -79,29 +77,6 @@ def make_tables(cur):
     )
 
 
-def make_parties(cur):
-    rows = []
-    party_info = []
-    for i in range(1, N_PARTIES + 1):
-        created = random_dt()
-        psize = random.choices(
-            [1, 2, 3, 4, 5, 6, 7, 8], weights=[5, 30, 20, 25, 10, 5, 3, 2]
-        )[0]
-        table_id = random.randint(1, N_TABLES) if random.random() < 0.9 else None
-        name = fake.last_name() + " party"
-        rows.append((i, name, psize, table_id, created))
-        party_info.append((i, created, table_id))
-    insert_batch(
-        cur,
-        """
-        INSERT INTO parties (party_id, name, party_size, table_id, created_at)
-        VALUES (%s, %s, %s, %s, %s)
-    """,
-        rows,
-    )
-    return party_info
-
-
 def make_reservations(cur):
     rows = []
     for i in range(1, N_RESERVATIONS + 1):
@@ -133,28 +108,26 @@ def make_reservations(cur):
     )
 
 
-def make_tabs(cur, party_info):
+def make_tabs(cur):
     rows = []
     tab_info = []
     for i in range(1, N_TABS + 1):
-        # each tab belongs to a random party
-        party_id, party_created, party_table = random.choice(party_info)
-        # tab opens shortly after the party arrives
-        created = party_created + timedelta(minutes=random.randint(0, 240))
+        created = random_dt()
         status = random.choices(["paid", "open", "void"], weights=[88, 7, 5])[0]
         total = round(random.uniform(15, 150), 2)
         if status in ("paid", "void"):
             closed = created + timedelta(minutes=random.randint(30, 240))
         else:
             closed = None
-        rows.append((i, party_id, total, created, party_table, status, closed))
+        table_id = random.randint(1, N_TABLES)
+        rows.append((i, total, created, table_id, status, closed))
         tab_info.append((i, created, status, total))
     insert_batch(
         cur,
         """
         INSERT INTO tabs
-            (tab_id, party_id, total_price, created_at, table_id, status, closed_at)
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
+            (tab_id, total_price, created_at, table_id, status, closed_at)
+        VALUES (%s, %s, %s, %s, %s, %s)
     """,
         rows,
     )
@@ -207,56 +180,11 @@ def make_payments(cur, tab_info):
     )
 
 
-def make_splits(cur, tab_info):
-    # pick 10% of tabs to be split
-    sampled = random.sample(tab_info, N_TAB_SPLITS)
-    split_rows = []
-    payer_rows = []
-    payer_id = 1
-    for sid, (tab_id, created, _status, total) in enumerate(sampled, start=1):
-        mode = random.choices(["even", "by_item", "percent"], weights=[60, 25, 15])[0]
-        tip_amt = round(total * random.uniform(0.10, 0.25), 2)
-        n_payers = random.randint(2, 4)
-        # random weights normalized to sum to 1
-        raw = [random.random() for _ in range(n_payers)]
-        s = sum(raw)
-        weights = [w / s for w in raw]
-        split_created = created + timedelta(minutes=random.randint(10, 120))
-        split_rows.append((sid, tab_id, mode, tip_amt, split_created))
-        for i, w in enumerate(weights):
-            sub = round(total * w, 2)
-            tax = round(sub * 0.085, 2)
-            tip = round(tip_amt * w, 2)
-            full = round(sub + tax + tip, 2)
-            payer_rows.append((payer_id, sid, f"Payer {i + 1}", sub, tax, tip, full))
-            payer_id += 1
-    insert_batch(
-        cur,
-        """
-        INSERT INTO tab_splits (split_id, tab_id, mode, tip_amount, created_at)
-        VALUES (%s, %s, %s, %s, %s)
-    """,
-        split_rows,
-    )
-    insert_batch(
-        cur,
-        """
-        INSERT INTO tab_split_payers
-            (split_payer_id, split_id, label, subtotal, tax, tip, total)
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
-    """,
-        payer_rows,
-    )
-
-
 # order matters because of foreign keys
 ALL_TABLES = [
-    "tab_split_payers",
-    "tab_splits",
     "payments",
     "tab_items",
     "tabs",
-    "parties",
     "reservations",
     "tables",
     "food_items",
@@ -268,13 +196,10 @@ SEQ_FIX = [
     ("employees", "employee_id"),
     ("food_items", "food_item_id"),
     ("tables", "table_id"),
-    ("parties", "party_id"),
     ("reservations", "reservation_id"),
     ("tabs", "tab_id"),
     ("tab_items", "tab_item_id"),
     ("payments", "payment_id"),
-    ("tab_splits", "split_id"),
-    ("tab_split_payers", "split_payer_id"),
 ]
 
 
@@ -302,18 +227,14 @@ def main():
     make_food_items(cur)
     print("tables...")
     make_tables(cur)
-    print("parties...")
-    parties = make_parties(cur)
     print("reservations...")
     make_reservations(cur)
     print("tabs...")
-    tabs = make_tabs(cur, parties)
+    tabs = make_tabs(cur)
     print("tab_items (this one takes a while)...")
     make_tab_items(cur, tabs)
     print("payments...")
     make_payments(cur, tabs)
-    print("tab_splits...")
-    make_splits(cur, tabs)
 
     print("fixing sequences...")
     for table, pk in SEQ_FIX:

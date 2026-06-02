@@ -195,7 +195,7 @@ def split_tab(table_id: int, tab_id: int, body: TabSplitRequest):
             conn.execute(
                 sqlalchemy.text(
                     """
-                SELECT tab_id, party_id
+                SELECT tab_id
                 FROM tabs
                 WHERE tab_id = :tab_id AND table_id = :table_id
                 """
@@ -254,12 +254,12 @@ def split_tab(table_id: int, tab_id: int, body: TabSplitRequest):
         new_tab_id = conn.execute(
             sqlalchemy.text(
                 """
-                INSERT INTO tabs (table_id, party_id, total_price)
-                VALUES (:table_id, :party_id, 0.0)
+                INSERT INTO tabs (table_id, total_price)
+                VALUES (:table_id, 0.0)
                 RETURNING tab_id
                 """
             ),
-            {"table_id": table_id, "party_id": tab_row["party_id"]},
+            {"table_id": table_id},
         ).scalar_one()
 
         for (name, unit_price), qty_to_move in move_quantities.items():

@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from src.api import partys, reservations, employees, tables, tabs, checkout
+from src.api import reservations, employees, tables, tabs, checkout
 from starlette.middleware.cors import CORSMiddleware
 
 
@@ -7,10 +7,6 @@ description = """
 The restaurant hosting application helps staff manage tables, reservations, server assignments, and customer tabs in real time.
 """
 tags_metadata = [
-    {
-        "name": "parties",
-        "description": "Manage parties, tabs and party-related actions.",
-    },
     {
         "name": "reservations",
         "description": "Create, view and manage reservations for tables.",
@@ -46,7 +42,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(partys.router)
 app.include_router(reservations.router)
 app.include_router(employees.router)
 app.include_router(tables.router)

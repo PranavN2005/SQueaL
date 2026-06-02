@@ -30,22 +30,8 @@ class Table(Base):
     reserved_for = Column(String, nullable=True)
 
     assigned_waiter = relationship("Employee", back_populates="tables")
-    parties = relationship("Party", back_populates="table")
     reservations = relationship("Reservation", back_populates="table")
     tabs = relationship("Tab", back_populates="table")
-
-
-class Party(Base):
-    __tablename__ = "parties"
-
-    party_id = Column(Integer, primary_key=True)
-    name = Column(String, nullable=False)
-    party_size = Column(Integer, nullable=False)
-    table_id = Column(Integer, ForeignKey("tables.table_id"), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-    table = relationship("Table", back_populates="parties")
-    tabs = relationship("Tab", back_populates="party")
 
 
 class FoodItem(Base):
@@ -60,12 +46,10 @@ class Tab(Base):
     __tablename__ = "tabs"
 
     tab_id = Column(Integer, primary_key=True)
-    party_id = Column(Integer, ForeignKey("parties.party_id"), nullable=True)
     table_id = Column(Integer, ForeignKey("tables.table_id"), nullable=True)
     total_price = Column(Float, nullable=False, default=0.0)
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    party = relationship("Party", back_populates="tabs")
     table = relationship("Table", back_populates="tabs")
     items = relationship("TabItem", back_populates="tab")
 
