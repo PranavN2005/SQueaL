@@ -397,11 +397,161 @@ POST /shifts/4/servers
   "shift_id": 4,
   "server_id": 15
 }
+
+---
+
+## 10. Get Reservations
+
+### `GET /reservations`
+
+Optional query params: `status`, `table_id`.
+
+**Example request**
+```http
+GET /reservations?status=reserved&table_id=7
+```
+
+**Example response**
+```json
+[
+  {
+    "reservation_id": 101,
+    "customer_name": "Danny Kullman",
+    "table_id": 7,
+    "party_size": 5,
+    "reservation_time": "2026-04-21T19:00:00-08:00",
+    "status": "reserved"
+  }
+]
 ```
 
 ---
 
-## 10. Update Table State
+## 11. Get Reservation by ID
+
+### `GET /reservations/{reservation_id}`
+
+**Example request**
+```http
+GET /reservations/101
+```
+
+**Example response**
+```json
+{
+  "reservation_id": 101,
+  "customer_name": "Danny Kullman",
+  "table_id": 7,
+  "party_size": 5,
+  "reservation_time": "2026-04-21T19:00:00-08:00",
+  "status": "reserved"
+}
+```
+
+---
+
+## 12. Get Table by ID
+
+### `GET /tables/{table_id}`
+
+**Example request**
+```http
+GET /tables/7
+```
+
+**Example response**
+```json
+{
+  "table_id": 7,
+  "capacity": 6,
+  "status": "reserved",
+  "assigned_waiter_id": 8,
+  "current_party_size": null,
+  "reserved_for": "Lucas Pierce"
+}
+```
+
+---
+
+## 13. Get Employee by ID
+
+### `GET /employees/{employee_id}`
+
+**Example request**
+```http
+GET /employees/12
+```
+
+**Example response**
+```json
+{
+  "employee_id": 12,
+  "first_name": "Hollow",
+  "last_name": "Knight"
+}
+```
+
+---
+
+## 14. List Tabs for a Table
+
+### `GET /tables/{table_id}/tabs`
+
+Returns a summary of each tab for a table.
+
+**Example request**
+```http
+GET /tables/3/tabs
+```
+
+**Example response**
+```json
+[
+  {
+    "tab_id": 55,
+    "table_id": 3,
+    "status": "open",
+    "item_count": 3,
+    "subtotal": 32.0
+  },
+  {
+    "tab_id": 56,
+    "table_id": 3,
+    "status": "paid",
+    "item_count": 2,
+    "subtotal": 16.0
+  }
+]
+```
+
+---
+
+## 15. Get Payment for a Tab
+
+### `GET /tabs/{tab_id}/payment`
+
+**Example request**
+```http
+GET /tabs/55/payment
+```
+
+**Example response**
+```json
+{
+  "payment_id": 9001,
+  "tab_id": 55,
+  "subtotal": 19.00,
+  "tax": 1.47,
+  "tip": 5.00,
+  "total": 25.47,
+  "payment_method": "card",
+  "paid_at": "2026-06-01T21:15:00-08:00"
+}
+```
+
+---
+
+## 16. Update Table State
 
 ### `PATCH /tables/{table_id}`
 
@@ -435,7 +585,7 @@ PATCH /tables/3
 
 ---
 
-## 11. Reset Table
+## 17. Reset Table
 
 ### `POST /tables/{table_id}/reset`
 
@@ -460,7 +610,7 @@ POST /tables/3/reset
 
 ---
 
-## 12. Check Out (Pay & Close) a Tab
+## 18. Check Out (Pay & Close) a Tab
 
 ### `POST /tabs/{tab_id}/checkout`
 
@@ -491,7 +641,6 @@ POST /tabs/55/checkout
   "total": 52.17,
   "payment_method": "card",
   "paid_at": "2026-05-27T03:30:00Z",
-  "tab_status": "paid",
   "table_status": "dirty"
 }
 ```

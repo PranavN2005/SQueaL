@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from typing import List
 import sqlalchemy
@@ -33,3 +33,31 @@ def get_employees():
         rows = conn.execute(query).mappings().all()
 
     return [EmployeeResponse(**row) for row in rows]
+
+
+@router.get(
+    "/{employee_id}",
+    response_model=EmployeeResponse,
+    status_code=status.HTTP_200_OK,
+)
+def get_employee(employee_id: int):
+    with db.engine.connect() as conn:
+        row = (
+            conn.execute(
+                sqlalchemy.text(
+                    """
+                    SELECT employee_id, first_name, last_name
+                    FROM employees
+                    WHERE employee_id = :employee_id
+                    """
+                ),
+                {"employee_id": employee_id},
+            )
+            .mappings()
+            .first()
+        )
+
+    if row is None:
+        raise HTTPException(status_code=404, detail="Employee not found")
+
+    return EmployeeResponse(**row)

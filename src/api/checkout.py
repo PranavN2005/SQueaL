@@ -44,6 +44,17 @@ class CheckoutResponse(BaseModel):
     table_status: Optional[str] = None
 
 
+class PaymentResponse(BaseModel):
+    payment_id: int
+    tab_id: int
+    subtotal: Decimal
+    tax: Decimal
+    tip: Decimal
+    total: Decimal
+    payment_method: str
+    paid_at: datetime
+
+
 @router.post("/{tab_id}/checkout", response_model=CheckoutResponse)
 def checkout_tab(tab_id: int, body: CheckoutRequest):
     with db.engine.begin() as conn:
@@ -139,3 +150,37 @@ def checkout_tab(tab_id: int, body: CheckoutRequest):
         tab_status="paid",
         table_status=table_status,
     )
+
+
+@router.get("/{tab_id}/payment", response_model=PaymentResponse)
+def get_payment(tab_id: int):
+    with db.engine.connect() as conn:
+        payment = (
+            conn.execute(
+                sqlalchemy.text(
+                    """
+                    SELECT payment_id, tab_id, subtotal, tax, tip, total,
+                           payment_method, paid_at
+                    FROM payments
+                    WHERE tab_id = :tab_id
+                    """
+                ),
+                {"tab_id": tab_id},
+            )
+            .mappings()
+            .first()
+        )
+
+        if payment is None:
+            tab_exists = conn.execute(
+                sqlalchemy.text("SELECT 1 FROM tabs WHERE tab_id = :tab_id"),
+                {"tab_id": tab_id},
+            ).scalar_one_or_none()
+            if tab_exists is None:
+                raise HTTPException(status_code=404, detail="Tab not found")
+            raise HTTPException(
+                status_code=404,
+                detail="Payment not found for this tab",
+            )
+
+    return PaymentResponse(**payment)

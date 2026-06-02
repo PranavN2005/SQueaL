@@ -51,6 +51,14 @@ class TabWithTotalsResponse(TabResponse):
     total: float
 
 
+class TabSummary(BaseModel):
+    tab_id: int
+    table_id: int
+    status: str
+    item_count: int
+    subtotal: float
+
+
 class TabSplitResponse(BaseModel):
     original_tab: TabResponse
     new_tab: TabResponse
@@ -156,6 +164,55 @@ def create_tab(table_id: int, body: TabCreate):
         result = _load_tab(conn, table_id, tab_id)
     assert result is not None
     return TabResponse(**result)
+
+
+@router.get("/{table_id}/tabs", response_model=List[TabSummary])
+def list_tabs_for_table(table_id: int):
+    with db.engine.connect() as conn:
+        table_exists = conn.execute(
+            sqlalchemy.text("SELECT 1 FROM tables WHERE table_id = :table_id"),
+            {"table_id": table_id},
+        ).scalar_one_or_none()
+        if table_exists is None:
+            raise HTTPException(status_code=404, detail="Table not found")
+
+        rows = (
+            conn.execute(
+                sqlalchemy.text(
+                    """
+                    SELECT
+                        t.tab_id,
+                        t.table_id,
+                        t.status,
+                        COALESCE(SUM(ti.quantity), 0) AS item_count,
+                        COALESCE(SUM(ti.quantity * ti.unit_price), 0) AS subtotal
+                    FROM tabs t
+                    LEFT JOIN tab_items ti ON t.tab_id = ti.tab_id
+                    WHERE t.table_id = :table_id
+                    GROUP BY t.tab_id, t.table_id, t.status
+                    ORDER BY t.tab_id
+                    """
+                ),
+                {"table_id": table_id},
+            )
+            .mappings()
+            .all()
+        )
+
+    summaries: List[TabSummary] = []
+    for row in rows:
+        subtotal_value = row["subtotal"] or 0
+        summaries.append(
+            TabSummary(
+                tab_id=row["tab_id"],
+                table_id=row["table_id"],
+                status=row["status"],
+                item_count=row["item_count"],
+                subtotal=float(round(subtotal_value, 2)),
+            )
+        )
+
+    return summaries
 
 
 @router.patch("/{table_id}/tabs/{tab_id}", response_model=TabResponse)

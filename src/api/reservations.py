@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from typing import List, Optional
 import sqlalchemy
 from src.api import auth
 from src import database as db
@@ -25,6 +26,55 @@ class ReservationResponse(BaseModel):
     party_size: int
     reservation_time: str
     status: str
+
+
+@router.get("/", response_model=List[ReservationResponse])
+def get_reservations(status: Optional[str] = None, table_id: Optional[int] = None):
+    query = (
+        "SELECT reservation_id, customer_name, table_id, party_size, "
+        "reservation_time, status FROM reservations"
+    )
+    filters = []
+    params: dict = {}
+    if status:
+        filters.append("status = :status")
+        params["status"] = status
+    if table_id is not None:
+        filters.append("table_id = :table_id")
+        params["table_id"] = table_id
+    if filters:
+        query = f"{query} WHERE {' AND '.join(filters)}"
+    query = f"{query} ORDER BY reservation_time"
+
+    with db.engine.connect() as conn:
+        rows = conn.execute(sqlalchemy.text(query), params).mappings().all()
+
+    return [ReservationResponse(**row) for row in rows]
+
+
+@router.get("/{reservation_id}", response_model=ReservationResponse)
+def get_reservation(reservation_id: int):
+    with db.engine.connect() as conn:
+        row = (
+            conn.execute(
+                sqlalchemy.text(
+                    """
+                    SELECT reservation_id, customer_name, table_id, party_size,
+                           reservation_time, status
+                    FROM reservations
+                    WHERE reservation_id = :reservation_id
+                    """
+                ),
+                {"reservation_id": reservation_id},
+            )
+            .mappings()
+            .first()
+        )
+
+    if row is None:
+        raise HTTPException(status_code=404, detail="Reservation not found")
+
+    return ReservationResponse(**row)
 
 
 @router.post("/", response_model=ReservationResponse)

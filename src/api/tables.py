@@ -85,6 +85,17 @@ def get_tables():
     return [TableResponse(**row) for row in rows]
 
 
+@router.get("/{table_id}", response_model=TableResponse)
+def get_table(table_id: int):
+    with db.engine.connect() as conn:
+        table = _get_table_row(conn, table_id)
+
+    if table is None:
+        raise HTTPException(status_code=404, detail="Table not found")
+
+    return TableResponse(**table)
+
+
 @router.patch("/{table_id}/assigned_waiter", response_model=AssignWaiterResponse)
 def patch_assigned_waiter(table_id: int, body: AssignWaiterBody):
     with db.engine.begin() as conn:
