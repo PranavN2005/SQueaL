@@ -1,12 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Optional
 import sqlalchemy
 from src.api import auth
 from src import database as db
 
 router = APIRouter(
-    prefix="/tables",
+    prefix="/tabs",
     tags=["tabs"],
     dependencies=[Depends(auth.get_api_key)],
 )
@@ -28,6 +28,7 @@ class TabItemOut(BaseModel):
 
 
 class TabCreate(BaseModel):
+    table_id: int = Field(..., gt=0)
     items: List[TabItemIn]
 
 
@@ -64,17 +65,17 @@ class TabSplitResponse(BaseModel):
     new_tab: TabResponse
 
 
-def _load_tab(conn, table_id: int, tab_id: int) -> Optional[dict]:
+def _load_tab(conn, tab_id: int) -> Optional[dict]:
     tab_row = (
         conn.execute(
             sqlalchemy.text(
                 """
                 SELECT tab_id, table_id
                 FROM tabs
-                WHERE tab_id = :tab_id AND table_id = :table_id
+                WHERE tab_id = :tab_id
                 """
             ),
-            {"tab_id": tab_id, "table_id": table_id},
+            {"tab_id": tab_id},
         )
         .mappings()
         .first()
@@ -138,12 +139,12 @@ def _insert_items(conn, tab_id: int, items: List[TabItemIn]) -> None:
         )
 
 
-@router.post("/{table_id}/tabs", response_model=TabResponse)
-def create_tab(table_id: int, body: TabCreate):
+@router.post("/", response_model=TabResponse)
+def create_tab(body: TabCreate):
     with db.engine.begin() as conn:
         table_exists = conn.execute(
             sqlalchemy.text("SELECT 1 FROM tables WHERE table_id = :id"),
-            {"id": table_id},
+            {"id": body.table_id},
         ).scalar_one_or_none()
         if table_exists is None:
             raise HTTPException(status_code=404, detail="Table not found")
@@ -156,45 +157,49 @@ def create_tab(table_id: int, body: TabCreate):
                 RETURNING tab_id
                 """
             ),
-            {"table_id": table_id},
+            {"table_id": body.table_id},
         ).scalar_one()
 
         _insert_items(conn, tab_id, body.items)
 
-        result = _load_tab(conn, table_id, tab_id)
+        result = _load_tab(conn, tab_id)
     assert result is not None
     return TabResponse(**result)
 
 
-@router.get("/{table_id}/tabs", response_model=List[TabSummary])
-def list_tabs_for_table(table_id: int):
+@router.get("/", response_model=List[TabSummary])
+def list_tabs(table_id: Optional[int] = None):
     with db.engine.connect() as conn:
-        table_exists = conn.execute(
-            sqlalchemy.text("SELECT 1 FROM tables WHERE table_id = :table_id"),
-            {"table_id": table_id},
-        ).scalar_one_or_none()
-        if table_exists is None:
-            raise HTTPException(status_code=404, detail="Table not found")
+        if table_id is not None:
+            table_exists = conn.execute(
+                sqlalchemy.text("SELECT 1 FROM tables WHERE table_id = :table_id"),
+                {"table_id": table_id},
+            ).scalar_one_or_none()
+            if table_exists is None:
+                raise HTTPException(status_code=404, detail="Table not found")
+
+        where_clause = ""
+        params: dict = {}
+        if table_id is not None:
+            where_clause = "WHERE t.table_id = :table_id"
+            params["table_id"] = table_id
+
+        query = f"""
+            SELECT
+                t.tab_id,
+                t.table_id,
+                t.status,
+                COALESCE(SUM(ti.quantity), 0) AS item_count,
+                COALESCE(SUM(ti.quantity * ti.unit_price), 0) AS subtotal
+            FROM tabs t
+            LEFT JOIN tab_items ti ON t.tab_id = ti.tab_id
+            {where_clause}
+            GROUP BY t.tab_id, t.table_id, t.status
+            ORDER BY t.tab_id
+        """
 
         rows = (
-            conn.execute(
-                sqlalchemy.text(
-                    """
-                    SELECT
-                        t.tab_id,
-                        t.table_id,
-                        t.status,
-                        COALESCE(SUM(ti.quantity), 0) AS item_count,
-                        COALESCE(SUM(ti.quantity * ti.unit_price), 0) AS subtotal
-                    FROM tabs t
-                    LEFT JOIN tab_items ti ON t.tab_id = ti.tab_id
-                    WHERE t.table_id = :table_id
-                    GROUP BY t.tab_id, t.table_id, t.status
-                    ORDER BY t.tab_id
-                    """
-                ),
-                {"table_id": table_id},
-            )
+            conn.execute(sqlalchemy.text(query), params)
             .mappings()
             .all()
         )
@@ -215,25 +220,25 @@ def list_tabs_for_table(table_id: int):
     return summaries
 
 
-@router.patch("/{table_id}/tabs/{tab_id}", response_model=TabResponse)
-def update_tab(table_id: int, tab_id: int, body: TabUpdate):
+@router.patch("/{tab_id}", response_model=TabResponse)
+def update_tab(tab_id: int, body: TabUpdate):
     with db.engine.begin() as conn:
-        if _load_tab(conn, table_id, tab_id) is None:
-            raise HTTPException(status_code=404, detail="Tab not found for this table")
+        if _load_tab(conn, tab_id) is None:
+            raise HTTPException(status_code=404, detail="Tab not found")
 
         _insert_items(conn, tab_id, body.items_to_add)
 
-        result = _load_tab(conn, table_id, tab_id)
+        result = _load_tab(conn, tab_id)
     assert result is not None
     return TabResponse(**result)
 
 
-@router.get("/{table_id}/tabs/{tab_id}", response_model=TabWithTotalsResponse)
-def get_tab(table_id: int, tab_id: int):
+@router.get("/{tab_id}", response_model=TabWithTotalsResponse)
+def get_tab(tab_id: int):
     with db.engine.connect() as conn:
-        result = _load_tab(conn, table_id, tab_id)
+        result = _load_tab(conn, tab_id)
     if result is None:
-        raise HTTPException(status_code=404, detail="Tab not found for this table")
+        raise HTTPException(status_code=404, detail="Tab not found")
 
     subtotal = result["subtotal"]
     tax = round(subtotal * TAX_RATE, 2)
@@ -242,8 +247,8 @@ def get_tab(table_id: int, tab_id: int):
     return TabWithTotalsResponse(**result, tax=tax, total=total)
 
 
-@router.post("/{table_id}/tabs/{tab_id}/split", response_model=TabSplitResponse)
-def split_tab(table_id: int, tab_id: int, body: TabSplitRequest):
+@router.post("/{tab_id}/split", response_model=TabSplitResponse)
+def split_tab(tab_id: int, body: TabSplitRequest):
     if not body.items_to_move:
         raise HTTPException(status_code=400, detail="items_to_move cannot be empty")
 
@@ -252,18 +257,20 @@ def split_tab(table_id: int, tab_id: int, body: TabSplitRequest):
             conn.execute(
                 sqlalchemy.text(
                     """
-                SELECT tab_id
+                SELECT tab_id, table_id
                 FROM tabs
-                WHERE tab_id = :tab_id AND table_id = :table_id
+                WHERE tab_id = :tab_id
                 """
                 ),
-                {"tab_id": tab_id, "table_id": table_id},
+                {"tab_id": tab_id},
             )
             .mappings()
             .first()
         )
         if tab_row is None:
-            raise HTTPException(status_code=404, detail="Tab not found for this table")
+            raise HTTPException(status_code=404, detail="Tab not found")
+
+        table_id = tab_row["table_id"]
 
         item_rows = (
             conn.execute(
@@ -369,8 +376,8 @@ def split_tab(table_id: int, tab_id: int, body: TabSplitRequest):
                 },
             )
 
-        original = _load_tab(conn, table_id, tab_id)
-        new_tab = _load_tab(conn, table_id, new_tab_id)
+        original = _load_tab(conn, tab_id)
+        new_tab = _load_tab(conn, new_tab_id)
 
     assert original is not None
     assert new_tab is not None

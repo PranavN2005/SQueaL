@@ -65,18 +65,19 @@ PATCH /tables/3/assigned_waiter
 
 ## 3. Create Tab for a Table
 
-### `POST /tables/{table_id}/tabs`
+### `POST /tabs`
 
 Creates a new tab for a table with an initial set of ordered items.
 
 **Example request**
 ```http
-POST /tables/3/tabs
+POST /tabs
 ```
 
 **Example request body**
 ```json
 {
+  "table_id": 3,
   "items": [
     {
       "item_name": "Coke",
@@ -119,13 +120,13 @@ POST /tables/3/tabs
 
 ## 4. Add Items to an Existing Tab
 
-### `PATCH /tables/{table_id}/tabs/{tab_id}`
+### `PATCH /tabs/{tab_id}`
 
 Adds additional items to an existing tab.
 
 **Example request**
 ```http
-PATCH /tables/3/tabs/55
+PATCH /tabs/55
 ```
 
 **Example request body**
@@ -168,13 +169,13 @@ PATCH /tables/3/tabs/55
 
 ## 5. Get Tab Details
 
-### `GET /tables/{table_id}/tabs/{tab_id}`
+### `GET /tabs/{tab_id}`
 
 Returns the current contents of a tab, including pricing details.
 
 **Example request**
 ```http
-GET /tables/3/tabs/55
+GET /tabs/55
 ```
 
 **Example response**
@@ -206,13 +207,13 @@ GET /tables/3/tabs/55
 
 ## 6. Split Tab Items
 
-### `POST /tables/{table_id}/tabs/{tab_id}/split`
+### `POST /tabs/{tab_id}/split`
 
 Moves selected items from an existing tab into a new tab for the same table.
 
 **Example request**
 ```http
-POST /tables/3/tabs/55/split
+POST /tabs/55/split
 ```
 **Example tab 55**
 {
