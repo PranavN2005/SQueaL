@@ -96,7 +96,9 @@ longer relevant:
 | Addie schema #8               | `POST /tables/{id}/reset` should be a `PATCH`                                                               | `reset` is an intentional RPC-style action with no request body; it conceptually clears a table rather than partially updating it.                         |
 | Addie schema #12 / Owen #10.5 | `tab_id` is redundant under `/tables/{id}/tabs`                                                             | Tabs are now a top-level `/tabs` resource, so this nesting concern no longer applies.                                                                      |
 | Owen #9.4                     | `get_tables` doesn't error when no tables exist                                                             | We figured that returning an empty list `[]` is the correct RESTful behavior for a collection with no members.                                             |
-| Owen #9.5 / Addie #5.8        | `tabs.total_price` is never updated                                                                         | The authoritative total is computed dynamically from `tab_items`. The column is vestigial and is simply not relied upon; tab responses are always correct. |
+| Owen #9.5 / Addie #5.8 / Bryce code #4 | `tabs.total_price` is never updated | The authoritative total is computed dynamically from `tab_items`. The column is vestigial and not relied upon; all tab responses compute the correct total at read time. |
+| Bryce schema #15 | Trailing slash inconsistency across routes | FastAPI handles both forms via automatic redirects. The inconsistency is cosmetic and does not affect correctness for any client that follows redirects. |
+| Owen #10.12 | `created_at` fields mostly unused / not defaulted | With parties removed, the remaining `created_at` columns on `tabs` and `reservations` are populated at insert time. No current endpoint depends on them so no change was made. |
 
 
 ### `food_items` is decorative by design
@@ -139,7 +141,7 @@ chose not to do this quarter are in **Deferred** below.
 | Employee roles / `is_active` / availability                          | Owen test, Joshua schema #12, Bryce schema #12 | Schema expansion; future work.                                                                                                          |
 | Wait-time / end-of-shift analytics                                   | Joshua product #1, Bryce product #2            | would require shifts + timestamps; future work.                                                                                         |
 | `ON DELETE` rules, `updated_at`, FK indexes beyond existing          | Bryce schema #1/#9/#10                         | Lower priority; some indexes already added in `63e7bf35c61b`.                                                                           |
-| Idempotency keys, per-user bearer tokens, API versioning             | Bryce schema/API cross-cutting                 | Good practice; architectural, out of scope for this sprint seems like an LLM's suggestion                                               |
+| Idempotency keys, per-user bearer tokens, API versioning             | Bryce schema/API cross-cutting                 | Good practice; architectural changes that go beyond the scope of this project.|
 | Money as `Decimal`/`NUMERIC` everywhere                              | Addie #7, Bryce code #12                       | Checkout already uses `Decimal`; converting all float paths is deferred. Penny-level drift is acknowledged in the performance writeup.  |
 | Configurable tax rate                                                | Bryce code #13                                 | Minor; deferred.                                                                                                                        |
 
