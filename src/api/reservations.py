@@ -137,7 +137,9 @@ def cancel_reservation(reservation_id: int):
 def create_reservation(body: ReservationCreate):
     with db.engine.begin() as conn:
         capacity = conn.execute(
-            sqlalchemy.text("SELECT capacity FROM tables WHERE table_id = :table_id"),
+            sqlalchemy.text(
+                "SELECT capacity FROM tables WHERE table_id = :table_id FOR UPDATE"
+            ),
             {"table_id": body.table_id},
         ).scalar_one_or_none()
         if capacity is None:

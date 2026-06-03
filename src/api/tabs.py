@@ -224,12 +224,23 @@ def list_tabs(table_id: Optional[int] = None):
 @router.patch("/{tab_id}", response_model=TabResponse)
 def update_tab(tab_id: int, body: TabUpdate):
     with db.engine.begin() as conn:
-        tab_exists = conn.execute(
-            sqlalchemy.text("SELECT 1 FROM tabs WHERE tab_id = :tab_id"),
-            {"tab_id": tab_id},
-        ).scalar_one_or_none()
-        if tab_exists is None:
+        tab = (
+            conn.execute(
+                sqlalchemy.text(
+                    "SELECT tab_id, status FROM tabs WHERE tab_id = :tab_id FOR UPDATE"
+                ),
+                {"tab_id": tab_id},
+            )
+            .mappings()
+            .first()
+        )
+        if tab is None:
             raise HTTPException(status_code=404, detail="Tab not found")
+        if tab["status"] != "open":
+            raise HTTPException(
+                status_code=409,
+                detail=f"Tab is not open (status: {tab['status']})",
+            )
 
         _insert_items(conn, tab_id, body.items_to_add)
 
@@ -263,9 +274,10 @@ def split_tab(tab_id: int, body: TabSplitRequest):
             conn.execute(
                 sqlalchemy.text(
                     """
-                SELECT tab_id, table_id
+                SELECT tab_id, table_id, status
                 FROM tabs
                 WHERE tab_id = :tab_id
+                FOR UPDATE
                 """
                 ),
                 {"tab_id": tab_id},
@@ -275,6 +287,11 @@ def split_tab(tab_id: int, body: TabSplitRequest):
         )
         if tab_row is None:
             raise HTTPException(status_code=404, detail="Tab not found")
+        if tab_row["status"] != "open":
+            raise HTTPException(
+                status_code=409,
+                detail=f"Tab is not open (status: {tab_row['status']})",
+            )
 
         table_id = tab_row["table_id"]
 
