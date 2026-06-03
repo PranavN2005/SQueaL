@@ -32,13 +32,13 @@ app = FastAPI(
     openapi_tags=tags_metadata,
 )
 
-origins = ["https://potion-exchange.vercel.app"]
+origins = ["*"] #removed leftover stuff we got from potion shop Lol
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["GET", "PATCH", "OPTIONS"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 

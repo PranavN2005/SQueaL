@@ -80,12 +80,38 @@ def get_reservation(reservation_id: int):
 @router.post("/", response_model=ReservationResponse)
 def create_reservation(body: ReservationCreate):
     with db.engine.begin() as conn:
-        table_exists = conn.execute(
-            sqlalchemy.text("SELECT 1 FROM tables WHERE table_id = :table_id"),
+        capacity = conn.execute(
+            sqlalchemy.text("SELECT capacity FROM tables WHERE table_id = :table_id"),
             {"table_id": body.table_id},
         ).scalar_one_or_none()
-        if table_exists is None:
+        if capacity is None:
             raise HTTPException(status_code=404, detail="Table not found")
+
+        if body.party_size > capacity:
+            raise HTTPException(
+                status_code=400,
+                detail="party_size cannot exceed table capacity",
+            )
+
+        conflict = conn.execute(
+            sqlalchemy.text(
+                """
+                SELECT 1 FROM reservations
+                WHERE table_id = :table_id
+                  AND reservation_time = :reservation_time
+                  AND status = 'reserved'
+                """
+            ),
+            {
+                "table_id": body.table_id,
+                "reservation_time": body.reservation_time,
+            },
+        ).scalar_one_or_none()
+        if conflict is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="Table is already reserved for this time",
+            )
 
         reservation_id = conn.execute(
             sqlalchemy.text(

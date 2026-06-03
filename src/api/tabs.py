@@ -16,8 +16,8 @@ TAX_RATE = 0.0775  # SLO county sales tax
 
 class TabItemIn(BaseModel):
     item_name: str
-    quantity: int
-    unit_price: float
+    quantity: int = Field(..., gt=0)
+    unit_price: float = Field(..., ge=0)
 
 
 class TabItemOut(BaseModel):

@@ -1,15 +1,15 @@
 # Peer Review Response
 
-This document responds to the peer review feedback filed as GitHub issues by our four
+We are documenting our responses to the peer review feedback by four
 reviewers: **Bryce Corbett** (issues 1-4), **Addie Weaver** (issues 5-8),
 **Owen Sam** (issues 9-12), and **Joshua Winn** (issues 13-16).
 
-Each piece of feedback falls into one of three buckets:
+Each suggestion falls into one of these three categories:
 
-- **Already addressed** - the issue was fixed in a migration or commit between the
-  review window (May 19) and this response.
+- **Already addressed** - the issue was fixed in a migration or commit since
+  reviews were issued.
 - **Not applicable** - the feedback targets code or schema that no longer exists
-  (most commonly the removed `parties` feature), or describes intended behavior.
+  (prolly about the removed `parties` feature), or describes behavior that we intended.
 - **Will fix / planned** - actionable feedback we are addressing now. (This section is
   a work in progress and will be filled in as the fixes land.)
 
@@ -24,9 +24,9 @@ Two structural changes landed after the reviews and account for a large share of
 feedback:
 
 1. **Removal of the `parties` feature** (migration `9d2a2f8a4d1e_remove_parties_and_splits`).
-   The reviewers correctly identified that `parties` and `tables` were two parallel,
-   half-finished ways to own a tab. We committed to the table-centric model and dropped
-   `parties` entirely, along with the party-specific tab endpoints.
+   Reviewers identified something that was on our list of things to address: that `parties` and `tables` were two parallel,
+   half-completed ways to own a tab. We chose to stick with the model where a table was considered a party and dropped
+   `parties` entirely, refactored out the party-specific tab endpoints.
 
 2. **Tab lifecycle + payments** (migration `f3a9c1d4b2e7_v4_tab_status_payments_splits`).
    Added `tabs.status` (`open`/`paid`/`void`) with a check constraint, a `closed_at`
@@ -47,6 +47,11 @@ feedback:
 | Addie product #2 / Owen product / Joshua product #2 | Need a single checkout / pay-and-close operation | Added [`src/api/checkout.py`](../src/api/checkout.py): `POST /tabs/{tab_id}/checkout` atomically computes the bill, records a payment, marks the tab `paid`, and sets the table `dirty`. Uses `SELECT ... FOR UPDATE` and `Decimal` money. |
 | Bryce product #1 / Joshua product #2 | Split a check | Added `POST /tabs/{tab_id}/split` in [`src/api/tabs.py`](../src/api/tabs.py), which moves line items onto a new tab on the same table. |
 | Bryce schema/API #16 | No "close tab" and no "list reservations" endpoints | Both now exist (checkout + reservation listing). |
+| Addie #1 / Joshua #7 / Bryce code #1 | API key printed to logs on every request | Removed the `print(...)` in [`src/api/auth.py`](../src/api/auth.py) that leaked both the caller's key and the server's secret. |
+| Bryce code #2 | 401 status returned with `"Forbidden"` detail (mismatch) | Changed the `detail` to `"Unauthorized"` so the message matches the `401 UNAUTHORIZED` status code in [`src/api/auth.py`](../src/api/auth.py). |
+| Addie #2 (Test #1) / Joshua #8, #9 / Bryce test #2 / Owen test wf3 | Tab items accept negative/zero quantity and negative price, producing negative subtotals/totals | Added `Field(..., gt=0)` to `quantity` and `Field(..., ge=0)` to `unit_price` on `TabItemIn` in [`src/api/tabs.py`](../src/api/tabs.py). Invalid values now return `422` before any DB write. Covers the create, update, and split paths. |
+| Addie #3 / Joshua #6 (Test #1) / Bryce code #11 | `TableUpdate.status` accepts any string (`"random_status"` was stored) | Restricted `status` to `Optional[Literal["open", "occupied", "reserved", "dirty"]]` in [`src/api/tables.py`](../src/api/tables.py). Invalid statuses now return `422`. |
+| Joshua schema #6 | Inconsistent table-status naming (`open` vs `available`) | The current code writes only `open`/`occupied`/`reserved`/`dirty` (verified in `seed.sql`, `seed_fake_data.py`, `reset_table`, `checkout.py`, `reservations.py`), and the new `Literal` enforces exactly that set. The lone `available` reference lives only in the historical [`docs/v1_manual_test_results.md`](v1_manual_test_results.md) log, which reflects the older v1 API and is left intact as a record. |
 
 ---
 
@@ -113,13 +118,6 @@ implemented for this milestone. We will mark those sections of
 > are being implemented; this document will be updated with the specific resolution for
 > each as the changes land.
 
-- **Security:** remove the API key `print` in [`src/api/auth.py`](../src/api/auth.py)
-  and fix the 401-vs-"Forbidden" message mismatch.
-  (Addie #1, Joshua #7, Bryce code #1, #2)
-- **Input validation:** require `quantity > 0` and `unit_price >= 0` on tab items.
-  (Addie #2 test, Joshua #8/#9, Bryce test #2, Owen test wf3)
-- **Status validation:** restrict `TableUpdate.status` to the allowed table states.
-  (Addie #3, Joshua #6, Joshua test #1, Bryce code #11)
 - **Reservation guards:** reject `party_size > capacity` (400) and double-bookings of
   the same table (409). (Addie tests #2/#3, Owen #2/#3, Joshua #3/#5, Bryce tests #1/#3)
 - **CORS:** add `POST` and `DELETE` to allowed methods and clean up the leftover

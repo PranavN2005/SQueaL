@@ -1,7 +1,7 @@
 # api/tables.py
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Literal, Optional
 import sqlalchemy
 from src.api import auth
 from src import database as db
@@ -32,7 +32,7 @@ class AssignWaiterResponse(BaseModel):
 
 
 class TableUpdate(BaseModel):
-    status: Optional[str] = None
+    status: Optional[Literal["open", "occupied", "reserved", "dirty"]] = None
     current_party_size: Optional[int] = Field(None, ge=0)
     reserved_for: Optional[str] = None
 
