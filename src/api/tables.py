@@ -101,22 +101,24 @@ class AvailableTablesResponse(BaseModel):
 @router.get("/available", response_model=AvailableTablesResponse)
 def get_available_tables(party_size: int = 1):
     if party_size < 1:
-        raise HTTPException(
-            status_code=400, detail="party_size must be at least 1"
-        )
+        raise HTTPException(status_code=400, detail="party_size must be at least 1")
 
     with db.engine.connect() as conn:
-        rows = conn.execute(
-            sqlalchemy.text(
-                """
+        rows = (
+            conn.execute(
+                sqlalchemy.text(
+                    """
                 SELECT table_id, capacity, assigned_waiter_id
                 FROM tables
                 WHERE status = 'open' AND capacity >= :party_size
                 ORDER BY capacity ASC
                 """
-            ),
-            {"party_size": party_size},
-        ).mappings().all()
+                ),
+                {"party_size": party_size},
+            )
+            .mappings()
+            .all()
+        )
 
     tables = [
         AvailableTableEntry(

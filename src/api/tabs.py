@@ -391,6 +391,7 @@ def split_tab(tab_id: int, body: TabSplitRequest):
         original_tab=TabResponse(**original), new_tab=TabResponse(**new_tab)
     )
 
+
 ## New endpoint for deleting an item from a tab(suggested by peer reviews)
 @router.delete("/{tab_id}/items/{tab_item_id}", response_model=TabResponse)
 def delete_tab_item(tab_id: int, tab_item_id: int):
@@ -415,9 +416,7 @@ def delete_tab_item(tab_id: int, tab_item_id: int):
             raise HTTPException(status_code=404, detail="Item not found on this tab")
 
         conn.execute(
-            sqlalchemy.text(
-                "DELETE FROM tab_items WHERE tab_item_id = :tab_item_id"
-            ),
+            sqlalchemy.text("DELETE FROM tab_items WHERE tab_item_id = :tab_item_id"),
             {"tab_item_id": tab_item_id},
         )
 

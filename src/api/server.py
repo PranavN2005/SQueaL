@@ -32,7 +32,7 @@ app = FastAPI(
     openapi_tags=tags_metadata,
 )
 
-origins = ["*"] #removed leftover stuff we got from potion shop Lol
+origins = ["*"]  # removed leftover stuff we got from potion shop Lol
 
 app.add_middleware(
     CORSMiddleware,
