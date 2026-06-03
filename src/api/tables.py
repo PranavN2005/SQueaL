@@ -85,6 +85,56 @@ def get_tables():
     return [TableResponse(**row) for row in rows]
 
 
+class AvailableTableEntry(BaseModel):
+    table_id: int
+    capacity: int
+    fit: str
+    assigned_waiter_id: Optional[int] = None
+
+
+class AvailableTablesResponse(BaseModel):
+    party_size_requested: int
+    available_tables: List[AvailableTableEntry]
+    total_open_tables: int
+
+
+@router.get("/available", response_model=AvailableTablesResponse)
+def get_available_tables(party_size: int = 1):
+    if party_size < 1:
+        raise HTTPException(
+            status_code=400, detail="party_size must be at least 1"
+        )
+
+    with db.engine.connect() as conn:
+        rows = conn.execute(
+            sqlalchemy.text(
+                """
+                SELECT table_id, capacity, assigned_waiter_id
+                FROM tables
+                WHERE status = 'open' AND capacity >= :party_size
+                ORDER BY capacity ASC
+                """
+            ),
+            {"party_size": party_size},
+        ).mappings().all()
+
+    tables = [
+        AvailableTableEntry(
+            table_id=row["table_id"],
+            capacity=row["capacity"],
+            fit="exact" if row["capacity"] == party_size else "oversized",
+            assigned_waiter_id=row["assigned_waiter_id"],
+        )
+        for row in rows
+    ]
+
+    return AvailableTablesResponse(
+        party_size_requested=party_size,
+        available_tables=tables,
+        total_open_tables=len(tables),
+    )
+
+
 @router.get("/{table_id}", response_model=TableResponse)
 def get_table(table_id: int):
     with db.engine.connect() as conn:
@@ -173,15 +223,22 @@ def patch_table(table_id: int, body: TableUpdate):
         )
 
         updated = _get_table_row(conn, table_id)
-    assert updated is not None
+    if updated is None:
+        raise HTTPException(status_code=500, detail="Internal error")
     return TableResponse(**updated)
 
 
 @router.post("/{table_id}/reset", response_model=TableResponse)
 def reset_table(table_id: int):
     with db.engine.begin() as conn:
-        if _get_table_row(conn, table_id) is None:
+        table = _get_table_row(conn, table_id)
+        if table is None:
             raise HTTPException(status_code=404, detail="Table not found")
+        if table["status"] == "occupied":
+            raise HTTPException(
+                status_code=409,
+                detail="Cannot reset an occupied table",
+            )
 
         conn.execute(
             sqlalchemy.text(
@@ -198,5 +255,6 @@ def reset_table(table_id: int):
         )
 
         updated = _get_table_row(conn, table_id)
-    assert updated is not None
+    if updated is None:
+        raise HTTPException(status_code=500, detail="Internal error")
     return TableResponse(**updated)

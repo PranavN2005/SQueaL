@@ -77,6 +77,62 @@ def get_reservation(reservation_id: int):
     return ReservationResponse(**row)
 
 
+@router.delete("/{reservation_id}", status_code=204)
+def cancel_reservation(reservation_id: int):
+    with db.engine.begin() as conn:
+        reservation = (
+            conn.execute(
+                sqlalchemy.text(
+                    """
+                    SELECT reservation_id, customer_name, table_id, status
+                    FROM reservations
+                    WHERE reservation_id = :reservation_id
+                    """
+                ),
+                {"reservation_id": reservation_id},
+            )
+            .mappings()
+            .first()
+        )
+        if reservation is None:
+            raise HTTPException(status_code=404, detail="Reservation not found")
+        if reservation["status"] == "cancelled":
+            raise HTTPException(
+                status_code=409, detail="Reservation is already cancelled"
+            )
+
+        conn.execute(
+            sqlalchemy.text(
+                "UPDATE reservations SET status = 'cancelled' "
+                "WHERE reservation_id = :reservation_id"
+            ),
+            {"reservation_id": reservation_id},
+        )
+
+        table = (
+            conn.execute(
+                sqlalchemy.text(
+                    "SELECT status, reserved_for FROM tables WHERE table_id = :table_id"
+                ),
+                {"table_id": reservation["table_id"]},
+            )
+            .mappings()
+            .first()
+        )
+        if (
+            table is not None
+            and table["status"] == "reserved"
+            and table["reserved_for"] == reservation["customer_name"]
+        ):
+            conn.execute(
+                sqlalchemy.text(
+                    "UPDATE tables SET status = 'open', reserved_for = NULL "
+                    "WHERE table_id = :table_id"
+                ),
+                {"table_id": reservation["table_id"]},
+            )
+
+
 @router.post("/", response_model=ReservationResponse)
 def create_reservation(body: ReservationCreate):
     with db.engine.begin() as conn:

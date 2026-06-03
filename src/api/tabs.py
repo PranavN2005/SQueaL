@@ -122,21 +122,25 @@ def _load_tab(conn, tab_id: int) -> Optional[dict]:
 
 
 def _insert_items(conn, tab_id: int, items: List[TabItemIn]) -> None:
-    for item in items:
-        conn.execute(
-            sqlalchemy.text(
-                """
-                INSERT INTO tab_items (tab_id, item_name, quantity, unit_price)
-                VALUES (:tab_id, :item_name, :quantity, :unit_price)
-                """
-            ),
+    if not items:
+        return
+    conn.execute(
+        sqlalchemy.text(
+            """
+            INSERT INTO tab_items (tab_id, item_name, quantity, unit_price)
+            VALUES (:tab_id, :item_name, :quantity, :unit_price)
+            """
+        ),
+        [
             {
                 "tab_id": tab_id,
                 "item_name": item.item_name,
                 "quantity": item.quantity,
                 "unit_price": item.unit_price,
-            },
-        )
+            }
+            for item in items
+        ],
+    )
 
 
 @router.post("/", response_model=TabResponse)
@@ -163,7 +167,8 @@ def create_tab(body: TabCreate):
         _insert_items(conn, tab_id, body.items)
 
         result = _load_tab(conn, tab_id)
-    assert result is not None
+    if result is None:
+        raise HTTPException(status_code=500, detail="Internal error")
     return TabResponse(**result)
 
 
@@ -219,13 +224,18 @@ def list_tabs(table_id: Optional[int] = None):
 @router.patch("/{tab_id}", response_model=TabResponse)
 def update_tab(tab_id: int, body: TabUpdate):
     with db.engine.begin() as conn:
-        if _load_tab(conn, tab_id) is None:
+        tab_exists = conn.execute(
+            sqlalchemy.text("SELECT 1 FROM tabs WHERE tab_id = :tab_id"),
+            {"tab_id": tab_id},
+        ).scalar_one_or_none()
+        if tab_exists is None:
             raise HTTPException(status_code=404, detail="Tab not found")
 
         _insert_items(conn, tab_id, body.items_to_add)
 
         result = _load_tab(conn, tab_id)
-    assert result is not None
+    if result is None:
+        raise HTTPException(status_code=500, detail="Internal error")
     return TabResponse(**result)
 
 
@@ -375,8 +385,43 @@ def split_tab(tab_id: int, body: TabSplitRequest):
         original = _load_tab(conn, tab_id)
         new_tab = _load_tab(conn, new_tab_id)
 
-    assert original is not None
-    assert new_tab is not None
+    if original is None or new_tab is None:
+        raise HTTPException(status_code=500, detail="Internal error")
     return TabSplitResponse(
         original_tab=TabResponse(**original), new_tab=TabResponse(**new_tab)
     )
+
+## New endpoint for deleting an item from a tab(suggested by peer reviews)
+@router.delete("/{tab_id}/items/{tab_item_id}", response_model=TabResponse)
+def delete_tab_item(tab_id: int, tab_item_id: int):
+    with db.engine.begin() as conn:
+        tab_exists = conn.execute(
+            sqlalchemy.text("SELECT 1 FROM tabs WHERE tab_id = :tab_id"),
+            {"tab_id": tab_id},
+        ).scalar_one_or_none()
+        if tab_exists is None:
+            raise HTTPException(status_code=404, detail="Tab not found")
+
+        item = conn.execute(
+            sqlalchemy.text(
+                """
+                SELECT tab_item_id FROM tab_items
+                WHERE tab_item_id = :tab_item_id AND tab_id = :tab_id
+                """
+            ),
+            {"tab_item_id": tab_item_id, "tab_id": tab_id},
+        ).scalar_one_or_none()
+        if item is None:
+            raise HTTPException(status_code=404, detail="Item not found on this tab")
+
+        conn.execute(
+            sqlalchemy.text(
+                "DELETE FROM tab_items WHERE tab_item_id = :tab_item_id"
+            ),
+            {"tab_item_id": tab_item_id},
+        )
+
+        result = _load_tab(conn, tab_id)
+    if result is None:
+        raise HTTPException(status_code=500, detail="Internal error")
+    return TabResponse(**result)
